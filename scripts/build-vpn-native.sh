@@ -6,6 +6,10 @@ export ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
 export ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/28.2.13676358}
 TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 [[ -x "$TOOLCHAIN/aarch64-linux-android26-clang" ]] || { echo 'Android NDK 28.2.13676358 is required.' >&2; exit 1; }
+# Keep bindgen's header discovery and parser on the same NDK. Mixing a host
+# Clang resource stdint.h with the NDK copy can suppress both via their guard.
+export CLANG_PATH="$TOOLCHAIN/clang"
+export LIBCLANG_PATH="$TOOLCHAIN/../lib"
 export CARGO_TARGET_DIR="$ROOT/.cache/vpn-target"
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
@@ -40,7 +44,7 @@ for spec in 'aarch64-linux-android arm64-v8a' 'x86_64-linux-android x86_64'; do
     read -r target abi <<< "$spec"
     if [[ "$abi" == arm64-v8a ]]; then triple=aarch64-linux-android; else triple=x86_64-linux-android; fi
     RESOURCE_DIR=$("$TOOLCHAIN/clang" --print-resource-dir)
-    export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$TOOLCHAIN/../sysroot -isystem $RESOURCE_DIR/include -isystem $TOOLCHAIN/../sysroot/usr/include/$triple -D__ANDROID_API__=26"
+    export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$TOOLCHAIN/../sysroot -nostdinc -isystem $RESOURCE_DIR/include -isystem $TOOLCHAIN/../sysroot/usr/include/$triple -isystem $TOOLCHAIN/../sysroot/usr/include -D__ANDROID_API__=26"
     cargo +1.95.0 build --manifest-path "$ROOT/native/vpn/Cargo.toml" --locked --release --target "$target"
     mkdir -p "$OUT/$abi"
     cp "$CARGO_TARGET_DIR/$target/release/libtiernest_vpn.so" "$OUT/$abi/"

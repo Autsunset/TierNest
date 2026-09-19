@@ -23,6 +23,10 @@ ABIs from the locked sources, and places `libtiernest_vpn.so` in
 alignment. The Gradle build packages these libraries in the APK. No unpublished
 precompiled bridge or signing service is needed.
 
+Bindgen uses the pinned NDK's Clang executable, libclang and explicit Android
+header search paths. Host Clang resource headers must not be mixed into this
+search: duplicate `stdint.h` guards can leave Android integer types undefined.
+
 Rust and C/C++ source paths are remapped to `/build/user` and `/build/tiernest`
 because panic/file/assertion locations survive symbol stripping. The final APK privacy check
 rejects developer home paths in either native libraries or DEX files.
