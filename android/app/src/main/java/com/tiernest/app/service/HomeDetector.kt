@@ -2,25 +2,17 @@ package com.tiernest.app.service
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import com.tiernest.app.TierNestApp
 import com.tiernest.app.data.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
 import java.net.Inet4Address
-import java.net.Proxy
-import java.net.URL
 
-data class WifiLink(val network: Network, val iface: String, val gateway: String)
+data class WifiLink(val network: Network, val iface: String, val gateway: String, val source: String)
 
 class HomeDetector(private val app: TierNestApp) {
     private val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    private var failedId: String? = null
-    private var failures = 0
-    private var trustedId: String? = null
+    private val trust = HomeTrust()
 
     fun wifi(): WifiLink? = cm.allNetworks.firstNotNullOfOrNull { network ->
         val caps = cm.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
@@ -29,7 +21,9 @@ class HomeDetector(private val app: TierNestApp) {
         val iface = props.interfaceName ?: return@firstNotNullOfOrNull null
         val gateway = props.routes.firstOrNull { it.isDefaultRoute && it.gateway is Inet4Address }?.gateway?.hostAddress
             ?: return@firstNotNullOfOrNull null
-        WifiLink(network, iface, gateway)
+        val source = props.linkAddresses.firstOrNull { it.address is Inet4Address }?.address?.hostAddress
+            ?: return@firstNotNullOfOrNull null
+        WifiLink(network, iface, gateway, source)
     }
 
     fun physicalNetworks(): List<String> = cm.allNetworks.flatMap { network ->
@@ -66,42 +60,32 @@ class HomeDetector(private val app: TierNestApp) {
         require(RoutePlanner.cidr(target)?.prefix == 32 && !target.contains('/')) { "请输入虚拟 IPv4 地址" }
         require(port in 1..65535) { "端口范围是 1–65535" }
         val link = wifi() ?: error("请先连接提供组网代理的 Wi-Fi")
-        check(probe(link.network, target, port)) { "通过当前 Wi-Fi 无法访问该 HTTP 地址" }
         val mac = app.engine.gatewayMac(link.iface, link.gateway)
+        check(app.engine.probeWifi(link.iface, link.gateway, link.source, target, port, mac)) {
+            "通过当前 Wi-Fi 无法访问该 HTTP 地址，请确认家庭网关已提供组网代理"
+        }
         check(wifi() == link) { "Wi-Fi 已变化，请重试" }
-        return HomeNetwork(link.iface, link.gateway, mac, target, port)
+        return HomeNetwork(link.iface, link.gateway, mac, target, port, wifiVerified = true)
     }
 
     suspend fun check(prefs: Preferences): Boolean {
-        if (!prefs.automatic || prefs.homes.isEmpty()) return false
-        val link = wifi() ?: return reset()
-        val possible = prefs.homes.filter { it.iface == link.iface && it.gateway == link.gateway }
-        if (possible.isEmpty()) return reset()
-        val mac = app.engine.gatewayMac(link.iface, link.gateway)
-        val home = possible.firstOrNull { it.mac == mac } ?: return reset()
-        val verified = prefs.detection == DetectionMode.EVENT || probe(link.network, home.target, home.port)
-        if (wifi() != link) return reset()
-        if (verified) {
-            failures = 0; failedId = null; trustedId = home.id
-            return true
-        }
-        failures = if (failedId == home.id) failures + 1 else 1
-        failedId = home.id
-        // Only retain standby for a single transient failure on the same gateway.
-        return trustedId == home.id && failures < 2
+        try { return inspect(prefs) }
+        catch (error: Exception) { trust.reset(); throw error }
     }
 
-    private fun reset(): Boolean { failures = 0; failedId = null; trustedId = null; return false }
+    fun reset() { trust.reset() }
 
-    private suspend fun probe(network: Network, target: String, port: Int): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            // Bind the HTTP socket to the physical Network, not the default VPN.
-            val connection = network.openConnection(URL("http://$target:$port/"), Proxy.NO_PROXY) as HttpURLConnection
-            try {
-                connection.connectTimeout = 2500; connection.readTimeout = 2500
-                connection.instanceFollowRedirects = false; connection.requestMethod = "HEAD"
-                connection.responseCode in 100..599
-            } finally { connection.disconnect() }
-        }.getOrDefault(false)
+    private suspend fun inspect(prefs: Preferences): Boolean {
+        if (!prefs.automatic || prefs.homes.isEmpty()) return trust.reset()
+        val link = wifi() ?: return trust.reset()
+        val possible = prefs.homes.filter { it.iface == link.iface && it.gateway == link.gateway }
+        if (possible.isEmpty()) return trust.reset()
+        val mac = app.engine.gatewayMac(link.iface, link.gateway)
+        val home = possible.firstOrNull { it.mac == mac } ?: return trust.reset()
+        check(home.wifiVerified) { "此家庭网络需要重新验证，请到设置 → 家庭网络完成验证" }
+        val verified = prefs.detection == DetectionMode.EVENT ||
+            app.engine.probeWifi(link.iface, link.gateway, link.source, home.target, home.port, mac)
+        if (wifi() != link) return trust.reset()
+        return trust.observe("$link|${home.id}|${home.target}:${home.port}|${prefs.detection}", verified)
     }
 }

@@ -154,9 +154,12 @@ enum class PreferencePage(val title: String) {
                             Column(Modifier.weight(1f)) {
                                 Text(home.gateway, fontWeight = FontWeight.SemiBold)
                                 SmallNote("${home.mac}\n验证目标 ${home.target}:${home.port}")
+                                if (!home.wifiVerified) SmallNote("需要重新验证，完成后才能自动待机", error = true)
                             }
                             IconButton(onClick = { remove = home }) { Icon(Icons.Rounded.DeleteOutline, "移除网络 ${home.gateway}") }
                         }
+                        TextButton(onClick = { model.learnHome(home.target, home.port.toString(), expectedId = home.id) },
+                            enabled = !busy && prefs.connectionMode == ConnectionMode.ROOT) { Text("重新验证") }
                     } }
                 }
                 PreferencePage.BACKUP -> {

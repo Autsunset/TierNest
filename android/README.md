@@ -1,6 +1,6 @@
 # TierNest Android App
 
-**0.2.0-alpha04** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
+**0.2.0-alpha05** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
@@ -40,6 +40,23 @@ VPN 模式首次弹出 Android 授权；Root 模式由 Root 管理器授权 **Ap
 使用 Root 模式前，先在原 TierNest/EasyTier WebUI 停止服务，再在 Root 管理器停用
 旧模块，避免重复内核和路由。停用模块本身不会终止已经运行的进程。
 
+## 家庭网络待机
+
+仅在 **Root + 自动模式**生效。先连到已提供 EasyTier 代理的家庭 Wi-Fi，在
+「设置 → 家庭网络」填写经路由器可访问的虚拟 IPv4 和 HTTP 端口，验证并保存。
+再到「运行与省电」选择自动。手动断开始终优先，离家不会自行取消手动停止。
+
+alpha05 的短时探测程序同时绑定 Wi-Fi 网卡和其当前 IPv4，避免高优先级手机
+组网路由绕过 Android `Network` 绑定；验证前后复核网关身份和网络信息。
+目标不能是本机地址；HTTP 验证不跟随重定向、不借用代理、不修改系统路由。
+检测异常保留或恢复核心，并在概览显示原因。
+
+升级和模块导入保留家庭记录、目标、模式与间隔。旧记录会显示「需要重新验证」，
+连回对应 Wi-Fi 后点「重新验证」即可；验证成功前不会用旧记录进入自动待机。
+事件模式在验证保存后只匹配网关身份，不重复 HTTP；Wi-Fi 不断而路由器代理失效
+时无法自动发现。定时模式默认每 30 秒验证，同一连续连接允许一次短暂失败，
+第二次失败恢复核心。切网、地址变化或检测异常会清除这次失败容忍。
+
 ## 配置与备份
 
 原始 TOML 是配置权威，运行时生成单独副本，升级不会用模板替换私人网络。
@@ -65,7 +82,7 @@ sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-输出 `dist/TierNest-App-v0.2.0-alpha04.apk`。上游下载、Cargo 依赖、工具版本和
+输出 `dist/TierNest-App-v0.2.0-alpha05.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
 这是 Release 优化的 **alpha 测试签名包**，保持早期测试包的覆盖升级能力。
@@ -77,6 +94,16 @@ Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](.
 参见 [方案与验证记录](PLAN.zh-CN.md) 及 [故障记录](../TierNest-故障与踩坑记录.md)。
 云手机可验证界面与 VPN 功能，不能替代 arm64 Root 授权、Clash 共存、真实移动网络、
 待机耗电和重启的完整验收。连接时 EasyTier 心跳与打洞仍会耗电，不承诺零耗电。
+
+家庭探测的网络隔离回归需授权的 Root Android 测试设备：
+
+```sh
+bash tests/test-home-probe-device.sh <adb-serial>
+```
+
+该回归在临时网络命名空间中创建合成 Wi-Fi/隧道和 HTTP 服务，验证隧道误判隔离、
+真实网关可达、超时、无效响应、本机目标拒绝和路由不变；退出后清理测试进程与文件。
+它不替代实体家庭 Wi-Fi 的连接、漫游和离家验收。
 
 ## 来源与许可
 

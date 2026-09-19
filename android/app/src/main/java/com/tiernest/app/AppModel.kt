@@ -145,11 +145,12 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
     fun backup() = task { message.value = "备份已保存：${backupConfiguration(app.store.readConfig())}" }
 
-    fun learnHome(target: String, port: String, onSaved: () -> Unit = {}) = task {
+    fun learnHome(target: String, port: String, expectedId: String? = null, onSaved: () -> Unit = {}) = task {
         homeError.value = ""
         try {
         check(app.store.load().connectionMode == ConnectionMode.ROOT) { "家庭网关识别目前用于 Root 模式" }
         val record = HomeDetector(app).learn(target.trim(), port.toIntOrNull() ?: error("请输入有效端口"))
+        check(expectedId == null || expectedId == record.id) { "当前 Wi-Fi 与该记录不同，请先连接此家庭网络" }
         prefs.value = app.store.update { it.copy(homes = it.homes.filterNot { h -> h.id == record.id } + record) }
         message.value = "已验证并记住当前 Wi-Fi"
         withContext(Dispatchers.Main) { ConnectionService.settingsChanged(app); onSaved() }

@@ -10,7 +10,8 @@ enum class ThemeStyle { MATERIAL, HYPER, CONSOLE }
 enum class ColorMode { SYSTEM, LIGHT, DARK }
 enum class DetectionMode { EVENT, HTTP }
 
-data class HomeNetwork(val iface: String, val gateway: String, val mac: String, val target: String, val port: Int) {
+data class HomeNetwork(val iface: String, val gateway: String, val mac: String, val target: String, val port: Int,
+                       val wifiVerified: Boolean = false) {
     val id get() = "$iface|$gateway|$mac"
 }
 
@@ -42,7 +43,8 @@ class AppStore(context: Context) {
             val array = JSONArray(prefs.getString("homes", "[]"))
             (0 until array.length()).map {
                 val h = array.getJSONObject(it)
-                HomeNetwork(h.getString("iface"), h.getString("gateway"), h.getString("mac"), h.getString("target"), h.getInt("port"))
+                HomeNetwork(h.getString("iface"), h.getString("gateway"), h.getString("mac"), h.getString("target"), h.getInt("port"),
+                    h.optBoolean("wifiVerified", false))
             }
         }.getOrDefault(emptyList())
         return Preferences(enum("theme", ThemeStyle.CONSOLE, ThemeStyle.entries.toTypedArray()),
@@ -58,6 +60,7 @@ class AppStore(context: Context) {
         val value = change(load())
         val homes = JSONArray().apply { value.homes.forEach { h -> put(JSONObject().apply {
             put("iface", h.iface); put("gateway", h.gateway); put("mac", h.mac); put("target", h.target); put("port", h.port)
+            put("wifiVerified", h.wifiVerified)
         }) } }
         check(prefs.edit().putString("theme", value.theme.name).putString("colors", value.colors.name)
             .putBoolean("dynamic", value.dynamicColor).putBoolean("requested", value.requested).putBoolean("boot", value.boot)

@@ -131,8 +131,15 @@ class ConnectionService : VpnService() {
         if (prefs.requested && automatic && eventHealthy) {
             try { home = detector.check(prefs) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { warning = "无法核实 Wi-Fi 身份，保持核心运行" }
-        }
+            catch (error: Exception) {
+                warning = "家庭网络检测失败，保持核心运行：${error.message.orEmpty().take(200)}"
+                // A transport/protocol failure may have closed the Root session.
+                // Recreate it below instead of assuming the old core survived.
+                if (coreActive && runningMode == ConnectionMode.ROOT && !app.engine.status().alive) {
+                    coreActive = false; lastSample = null
+                }
+            }
+        } else detector.reset()
         val desired = ConnectionPolicy.decide(app.store.load().requested, prefs.screenSuspend && screenRegistered,
             getSystemService(PowerManager::class.java).isInteractive, automatic, home, eventHealthy)
         if (desired == DesiredConnection.STOPPED) {

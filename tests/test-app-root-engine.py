@@ -217,4 +217,26 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.run_shell('cleanup_rpc').returncode, 0)
         self.assertEqual(self.state()['chains'], {})
 
+    def test_home_probe_passes_literal_arguments_without_route_changes(self):
+        probe = self.root / 'bin/home-probe'
+        probe.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$TN_STAGE/seen"\nprintf "reachable=1\\n"\n')
+        probe.chmod(0o755)
+        query = 'wlan0 192.0.2.2 10.77.0.9 8080\n'
+        (self.root / 'stage/probe-query').write_text(query)
+        result = self.run_shell('export TN_STAGE; dispatch probe')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'reachable=1')
+        self.assertEqual((self.root / 'stage/seen').read_text().splitlines(), query.split())
+        self.assertEqual(self.state()['calls'], [])
+
+    def test_home_probe_rejects_extra_fields_and_propagates_errors(self):
+        probe = self.root / 'bin/home-probe'
+        probe.write_text('#!/bin/sh\nexit 2\n'); probe.chmod(0o755)
+        query = self.root / 'stage/probe-query'
+        query.write_text('wlan0 192.0.2.2 10.77.0.9 80\n')
+        self.assertEqual(self.run_shell('dispatch probe').returncode, 2)
+        query.write_text('wlan0 192.0.2.2 10.77.0.9 80 extra\n')
+        self.assertEqual(self.run_shell('dispatch probe').returncode, 1)
+        self.assertEqual(self.state()['calls'], [])
+
 if __name__ == '__main__': unittest.main(verbosity=2)

@@ -273,6 +273,10 @@ dispatch() {
         backup) backup_file;;
         import) snapshot_module;;
         validate) timeout 10 "$TN_ROOT/bin/easytier-core" --check-config -c "$TN_STAGE/effective.toml" >/dev/null 2>&1;;
+        probe)
+            read -r tn_wifi tn_source tn_target tn_port tn_extra < "$TN_STAGE/probe-query" || return 1
+            [ -z "$tn_extra" ] || return 1
+            timeout 4 "$TN_ROOT/bin/home-probe" "$tn_wifi" "$tn_source" "$tn_target" "$tn_port";;
         gateway)
             read -r tn_iface tn_gateway < "$TN_STAGE/wifi-query" || return 1
             case "$tn_iface" in wlan[0-9]*) ;; *) return 1;; esac

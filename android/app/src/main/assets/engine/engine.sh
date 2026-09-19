@@ -35,9 +35,9 @@ stop_core && cleanup_routes && cleanup_rpc || exit 1
 # Root-owned payloads are installed and verified once per digest. A standby
 # identity check must not reread tens of megabytes of binaries every 30 seconds.
 if ! cmp -s "$TN_STAGE/SHA256SUMS" "$TN_ROOT/bin/SHA256SUMS" ||
-    [ ! -x "$TN_ROOT/bin/easytier-core" ] || [ ! -x "$TN_ROOT/bin/easytier-cli" ]; then
+    [ ! -x "$TN_ROOT/bin/easytier-core" ] || [ ! -x "$TN_ROOT/bin/easytier-cli" ] || [ ! -x "$TN_ROOT/bin/home-probe" ]; then
     (cd "$TN_STAGE" && sha256sum -c SHA256SUMS >/dev/null) || { echo 'Core checksum failed' >&2; exit 1; }
-    for tn_bin in easytier-core easytier-cli; do
+    for tn_bin in easytier-core easytier-cli home-probe; do
         cp "$TN_STAGE/$tn_bin" "$TN_ROOT/bin/$tn_bin.new" &&
             chmod 0700 "$TN_ROOT/bin/$tn_bin.new" &&
             mv "$TN_ROOT/bin/$tn_bin.new" "$TN_ROOT/bin/$tn_bin" || exit 1

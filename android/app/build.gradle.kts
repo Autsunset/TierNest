@@ -11,8 +11,8 @@ android {
         applicationId = "com.tiernest.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.0-alpha04"
+        versionCode = 5
+        versionName = "0.2.0-alpha05"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
@@ -44,7 +44,8 @@ val prepareEngine by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir.parentFile)
     commandLine("bash", "scripts/prepare-android-engine.sh")
     inputs.files(fileTree("src/main/assets"), "../../scripts/prepare-android-engine.sh",
-        "../../scripts/fetch-upstream.sh", "../../LICENSE", "../../THIRD_PARTY_NOTICES.md")
+        "../../scripts/fetch-upstream.sh", "../../scripts/build-home-probe.sh", "../../native/home-probe.c",
+        "../../LICENSE", "../../THIRD_PARTY_NOTICES.md")
     outputs.dir(layout.buildDirectory.dir("generated/engineAssets"))
 }
 tasks.named("preBuild") { dependsOn(prepareEngine) }
