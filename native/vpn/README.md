@@ -23,6 +23,10 @@ ABIs from the locked sources, and places `libtiernest_vpn.so` in
 alignment. The Gradle build packages these libraries in the APK. No unpublished
 precompiled bridge or signing service is needed.
 
+Rust and C/C++ source paths are remapped to `/build/user` and `/build/tiernest`
+because panic/file/assertion locations survive symbol stripping. The final APK privacy check
+rejects developer home paths in either native libraries or DEX files.
+
 To change EasyTier itself, clone the above revision, edit it, replace the
 EasyTier dependency in Cargo.toml with a local path, and update Cargo.lock.
 Rebuild using the same script. To supply a separately built replacement, place

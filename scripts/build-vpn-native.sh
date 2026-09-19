@@ -26,7 +26,15 @@ export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
 export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN/x86_64-linux-android26-clang"
 export CC_x86_64_linux_android="$TOOLCHAIN/x86_64-linux-android26-clang"
 export AR_x86_64_linux_android="$TOOLCHAIN/llvm-ar"
-export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
+# Rust file!()/panic locations survive symbol stripping. Remap source names at
+# compilation, including dependency sources, before distributing either ABI.
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384 --remap-path-prefix=$HOME=/build/user --remap-path-prefix=$ROOT=/build/tiernest"
+# C assertions (including KCP) also retain __FILE__ paths in stripped output.
+PRIVACY_CFLAGS="-ffile-prefix-map=$HOME=/build/user -ffile-prefix-map=$ROOT=/build/tiernest"
+export CFLAGS_aarch64_linux_android="${CFLAGS_aarch64_linux_android:-} $PRIVACY_CFLAGS"
+export CFLAGS_x86_64_linux_android="${CFLAGS_x86_64_linux_android:-} $PRIVACY_CFLAGS"
+export CXXFLAGS_aarch64_linux_android="${CXXFLAGS_aarch64_linux_android:-} $PRIVACY_CFLAGS"
+export CXXFLAGS_x86_64_linux_android="${CXXFLAGS_x86_64_linux_android:-} $PRIVACY_CFLAGS"
 OUT="$ROOT/android/app/build/generated/vpnJniLibs"
 for spec in 'aarch64-linux-android arm64-v8a' 'x86_64-linux-android x86_64'; do
     read -r target abi <<< "$spec"

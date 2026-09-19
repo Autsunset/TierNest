@@ -4,7 +4,7 @@
 节点拓扑、TOML 配置与 Download 备份。保留 Magisk / KernelSU / APatch 通用模块。
 TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
-- **App：0.2.0-alpha03**，Android 8+，VPN 支持 arm64 / x86_64，Root 支持 arm64。
+- **App：0.2.0-alpha04**，Android 8+，VPN 支持 arm64 / x86_64，Root 支持 arm64。
 - **模块：1.1.0**，所有 arm64 设备使用同一个通用 ZIP；EasyTier 核心均为 2.6.4。
 - [下载 APK](https://github.com/Autsunset/TierNest/releases) · [App 使用与构建](android/README.md) · [验证记录](android/PLAN.zh-CN.md)
 
