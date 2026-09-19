@@ -1,0 +1,35 @@
+instance_name = "default"
+# ipv4 = "10.144.144.2/24"
+dhcp = false
+listeners = [
+    "tcp://0.0.0.0:11010",
+    "udp://0.0.0.0:11010",
+    "wg://0.0.0.0:11011",
+]
+mapped_listeners = []
+exit_nodes = []
+rpc_portal = "127.0.0.1:15888"
+
+[network_identity]
+network_name = "default"
+network_secret = ""
+
+# [[peer]]
+# uri = "tcp://your-server.example.com:11010"
+
+[flags]
+dev_name = "tiernest0"
+enable_encryption = true
+enable_ipv6 = false
+mtu = 1380
+latency_first = false
+enable_exit_node = false
+no_tun = false
+use_smoltcp = false
+enable_kcp_proxy = false
+disable_kcp_input = false
+foreign_network_whitelist = "*"
+disable_p2p = false
+relay_all_peer_rpc = false
+disable_udp_hole_punching = false
+disable_tcp_hole_punching = false

@@ -1,0 +1,1 @@
+-i 10.144.144.2/24 --network-name default --network-secret change-me --peers tcp://your-server.example.com:11010 --dev-name tiernest0 --rpc-portal 127.0.0.1:15888

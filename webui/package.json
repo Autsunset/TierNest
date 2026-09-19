@@ -1,0 +1,16 @@
+{
+  "name": "tiernest-webui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --format=iife --target=chrome90 --outfile=../module/webroot/app.js && esbuild src/styles.css --bundle --minify --outfile=../module/webroot/app.css"
+  },
+  "dependencies": {
+    "kernelsu": "3.0.2",
+    "smol-toml": "1.8.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

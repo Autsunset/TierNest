@@ -1,0 +1,13 @@
+#!/sbin/sh
+umask 022
+ui_print() { echo "$1"; }
+OUTFD=$2
+ZIPFILE=$3
+mount /data 2>/dev/null
+if [ -f /data/adb/magisk/util_functions.sh ]; then
+    . /data/adb/magisk/util_functions.sh
+    install_module
+    exit 0
+fi
+ui_print "请使用 KernelSU、APatch 或 Magisk 管理器安装此模块。"
+exit 1

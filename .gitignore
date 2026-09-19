@@ -1,0 +1,47 @@
+# Private inputs and local artifacts
+/.private/
+/.cache/
+/dist/
+/outputs/
+*.log
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Downloaded dependencies and bytecode
+/webui/node_modules/
+/module/bin/
+__pycache__/
+*.py[cod]
+
+# Device state: only the unconfigured templates belong in source control
+/module/logs/
+/module/run/
+/module/config/*
+!/module/config/config.toml
+!/module/config/command_args_sample
+!/module/config/node-locations.conf
+/module/disable
+/module/remove
+/module/update
+
+# Android local build state and generated upstream payload
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/**/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+/native/vpn/target/

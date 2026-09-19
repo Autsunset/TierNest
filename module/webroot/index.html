@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#090d16" />
+  <title>TierNest Core</title>
+  <link rel="stylesheet" href="/internal/insets.css" />
+  <link rel="stylesheet" href="./app.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <div class="app-container">
+    <!-- Top App Bar -->
+    <header class="top-app-bar">
+      <div class="brand-section">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="2.5"/>
+            <circle cx="18" cy="6" r="2.5"/>
+            <circle cx="12" cy="18" r="2.5"/>
+            <path d="M8.2 7.2l2.6 8.6M15.8 7.2l-2.6 8.6M8.5 6h7"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title-row">
+            <h1 class="brand-title">TierNest</h1>
+            <span id="module-version-badge" class="version-chip" title="TierNest Core">读取版本中</span>
+          </div>
+          <p class="brand-subtitle">EasyTier Mesh · KernelSU</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="global-state-pill" class="state-pill" data-state="loading">
+          <span class="state-dot"></span>
+          <span class="state-text">读取中</span>
+        </div>
+        <button id="global-refresh-btn" class="icon-btn" type="button" aria-label="刷新状态" title="刷新状态">
+          <svg class="spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/>
+            <polyline points="21 3 21 8 16 8"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area with 4 Tab Panels -->
+    <main class="tab-content-area">
+      <!-- ================= TAB 1: 概览 (Overview) ================= -->
+      <section id="tab-overview" class="tab-panel is-active" role="tabpanel" aria-labelledby="nav-tab-overview">
+        <!-- Hero Status Card -->
+        <article class="card hero-status-card">
+          <div class="hero-status-header">
+            <div class="hero-status-icon-box" id="hero-icon-box" data-state="loading">
+              <svg id="hero-status-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </div>
+            <div class="hero-status-info">
+              <div class="hero-status-headline" id="overview-state-headline">正在检测服务状态…</div>
+              <div class="hero-status-subline">
+                <span>更新于: <strong id="overview-updated-time">—</strong></span>
+                <span class="dot-divider">•</span>
+                <span id="overview-framework-tag">KernelSU</span>
+                <span class="dot-divider">•</span>
+                <span id="overview-mode-badge" class="mode-tag">配置模式</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Parameters Grid -->
+          <div class="quick-status-grid">
+            <div class="quick-stat-item">
+              <span class="stat-label">PID</span>
+              <span class="stat-value font-mono" id="stat-pid" title="—">—</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="stat-label">TUN 网卡</span>
+              <span class="stat-value font-mono" id="stat-tun" title="—">—</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="stat-label">虚拟 IPv4</span>
+              <span class="stat-value font-mono highlight" id="stat-ip" title="—">—</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="stat-label">组网名称</span>
+              <span class="stat-value font-mono" id="stat-network" title="—">—</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="stat-label">策略路由</span>
+              <span class="stat-value font-mono" id="stat-route" title="—">—</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="stat-label">外部 VPN</span>
+              <span class="stat-value" id="stat-vpn" title="未检测到">未检测到</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Performance Metrics Section -->
+        <section class="section-container">
+          <div class="section-title-row">
+            <h2 class="section-title">
+              <svg class="section-title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+              性能指标与健康度
+            </h2>
+            <span class="section-badge" id="metrics-status-badge">实时监控</span>
+          </div>
+
+          <div class="metrics-grid">
+            <!-- CPU Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">CPU 占用</span>
+                <div class="metric-icon-wrap cpu">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
+                    <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+                    <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+                    <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="15" x2="23" y2="15"/>
+                    <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="15" x2="4" y2="15"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-wrap">
+                <span class="metric-number font-mono" id="metric-cpu">0.0%</span>
+              </div>
+              <div class="metric-progress-bar">
+                <div class="metric-progress-fill cpu-fill" id="metric-cpu-bar" style="width: 2%"></div>
+              </div>
+            </div>
+
+            <!-- RSS Memory Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">内存占用 (RSS)</span>
+                <div class="metric-icon-wrap ram">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 19v-3"/><path d="M10 19v-3"/><path d="M14 19v-3"/><path d="M18 19v-3"/>
+                    <rect x="2" y="6" width="20" height="10" rx="2"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-wrap">
+                <span class="metric-number font-mono" id="metric-rss">—</span>
+              </div>
+              <div class="metric-foot-note" id="metric-rss-note">虚拟内存: — · 线程: —</div>
+            </div>
+
+            <!-- Runtime / Uptime Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">运行时长</span>
+                <div class="metric-icon-wrap uptime">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-wrap">
+                <span class="metric-number font-mono" id="metric-uptime">—</span>
+              </div>
+              <div class="metric-foot-note" id="metric-uptime-note">自核心启动</div>
+            </div>
+
+            <!-- TUN Traffic RX/TX Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">TUN 流量 (RX / TX)</span>
+                <div class="metric-icon-wrap traffic">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-traffic-row">
+                <div class="traffic-item">
+                  <span class="traffic-dir rx">↓ RX</span>
+                  <span class="traffic-val font-mono" id="metric-tun-rx">—</span>
+                </div>
+                <div class="traffic-item">
+                  <span class="traffic-dir tx">↑ TX</span>
+                  <span class="traffic-val font-mono" id="metric-tun-tx">—</span>
+                </div>
+              </div>
+              <div class="metric-foot-note" id="metric-tun-note">网卡累计传输</div>
+            </div>
+
+            <!-- Log Size Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">日志占用</span>
+                <div class="metric-icon-wrap logsize">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-wrap">
+                <span class="metric-number font-mono" id="metric-log-size">—</span>
+              </div>
+              <div class="metric-foot-note" id="metric-log-detail">核心 — · 监测 — · 模块 —</div>
+            </div>
+
+            <!-- VPN Restarts & Health Metric Card -->
+            <div class="metric-card">
+              <div class="metric-card-top">
+                <span class="metric-label">健康与恢复</span>
+                <div class="metric-icon-wrap restarts">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-wrap">
+                <span class="metric-number font-mono" id="metric-vpn-restarts">0 次重启</span>
+              </div>
+              <div class="metric-foot-note" id="metric-health-detail">路由同步: 0 次</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- EasyTier Network Topology -->
+        <section class="section-container" id="topology-section">
+          <div class="section-title-row">
+            <h2 class="section-title">
+              <svg class="section-title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="5" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="19" r="2"/><path d="m6.7 10.8 3.6-4.3m3.4 0 3.6 4.3m0 2.4-3.6 4.3m-3.4 0-3.6-4.3"/>
+              </svg>
+              组网拓扑
+            </h2>
+            <div class="topology-controls">
+              <div class="topology-view-toggle" role="group" aria-label="拓扑节点过滤">
+                <button class="topology-view-btn is-active" data-topology-filter="all" type="button">显示全部</button>
+                <button class="topology-view-btn" data-topology-filter="virtual_only" type="button">仅虚拟节点</button>
+              </div>
+              <button id="topology-refresh-btn" class="icon-btn" type="button" aria-label="刷新组网拓扑" title="刷新组网拓扑">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+              </button>
+            </div>
+          </div>
+          <article class="card topology-card">
+            <div class="topology-summary-row">
+              <div>
+                <strong id="topology-summary-title" class="topology-summary-title">等待 EasyTier 节点数据</strong>
+                <p id="topology-summary-text" class="topology-summary-text">以本机为起点，按直连、下一跳和代理网段组织连接关系。</p>
+              </div>
+              <span id="topology-node-count" class="section-badge">0 个节点</span>
+            </div>
+            <div class="topology-viewport" id="topology-viewport" tabindex="0" role="region" aria-label="可滚动的路由拓扑树">
+              <svg id="topology-svg" class="topology-svg" viewBox="0 0 400 220" role="group" aria-label="EasyTier 组网拓扑图"></svg>
+              <div id="topology-placeholder" class="topology-placeholder">EasyTier 连接后将在这里显示节点拓扑</div>
+            </div>
+            <div class="topology-legend" aria-label="拓扑图图例">
+              <span><i class="topology-legend-dot local"></i>本机</span>
+              <span><i class="topology-legend-dot gateway"></i>子网网关</span>
+              <span><i class="topology-legend-dot peer"></i>设备节点</span>
+              <span><i class="topology-legend-dot public"></i>公网中继</span>
+              <span><i class="topology-legend-dot subnet"></i>代理网段</span>
+            </div>
+            <div class="topology-edge-legend"><span><i></i>已知路由连接</span><span><i class="dashed"></i>折叠 / 未展开路径</span></div>
+            <p class="topology-route-note">按本机路由绘制，不代表全网所有物理链路。多跳和缺失信息明确标注；上下滚动查看分支，点击节点查看完整路径。</p>
+            <div id="topology-detail" class="topology-detail" aria-live="polite">
+              <span class="topology-detail-empty">点击节点查看虚拟 IP、连接路径、延迟和下一跳</span>
+            </div>
+          </article>
+
+          <!-- Virtual Nodes Connection Details List -->
+          <article class="card topology-nodes-list-card">
+            <div class="topology-nodes-header">
+              <div class="topology-nodes-title-wrap">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+                <strong class="topology-nodes-title">虚拟节点连接详情</strong>
+              </div>
+              <span id="topology-virtual-count-badge" class="section-badge">0 个虚拟节点</span>
+            </div>
+            <div id="topology-virtual-nodes-list" class="topology-nodes-grid" aria-label="所有虚拟节点列表">
+              <!-- Dynamically populated -->
+            </div>
+          </article>
+        </section>
+
+        <!-- Service Control Actions -->
+        <section class="section-container">
+          <div class="section-title-row">
+            <h2 class="section-title">
+              <svg class="section-title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              服务控制与维护
+            </h2>
+          </div>
+
+          <div class="control-actions-grid">
+            <button class="btn btn-primary btn-lg" data-control-cmd="start" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>启动服务</span>
+            </button>
+            <button class="btn btn-danger btn-lg" data-control-cmd="stop" type="button">
+              <svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+              <span>停止服务</span>
+            </button>
+            <button class="btn btn-secondary btn-lg" data-control-cmd="restart" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+              <span>重启服务</span>
+            </button>
+            <button class="btn btn-secondary btn-lg" data-control-cmd="sync-routes" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              <span>同步路由</span>
+            </button>
+          </div>
+
+          <article class="card form-card service-mode-card">
+            <div class="form-card-header"><h3 class="form-card-title">运行方式</h3></div>
+            <div class="form-body">
+              <div class="form-group">
+                <label class="form-label" for="service-mode-select">手动或自动</label>
+                <select id="service-mode-select" class="form-input">
+                  <option value="manual">手动模式：自行启动和停止</option>
+                  <option value="auto">自动模式：路由器可代理时待机</option>
+                </select>
+                <span class="form-hint">手动停止会关闭核心和全部后台，重启手机后也保持停止。自动模式使用下方选择的检测方式；点击停止同样会关闭检测。</span>
+                <button id="service-mode-save" class="btn btn-primary" type="button">应用运行方式</button>
+                <p id="service-mode-status" class="form-hint" role="status">正在读取运行方式…</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="home-detection-select">自动检测方式</label>
+                <select id="home-detection-select" class="form-input" aria-describedby="home-detection-hint">
+                  <option value="poll">定时检测：持续确认路由器代理可用</option>
+                  <option value="event">事件检测：Wi-Fi 连接变化时判断</option>
+                </select>
+                <div id="home-interval-field" class="form-group">
+                  <label class="form-label" for="home-check-interval">检测间隔（秒）</label>
+                  <input id="home-check-interval" class="form-input" type="number" inputmode="numeric" min="1" max="2147483647" step="1" value="30" autocomplete="off" />
+                </div>
+                <p id="home-detection-hint" class="form-hint">输入正整数秒，例如 30、60 或 300。同一网络连续两次代理验证失败后恢复手机核心。</p>
+                <button id="home-detection-save" class="btn btn-secondary" type="button">保存检测设置</button>
+                <p id="home-detection-status" class="form-hint" role="status">正在读取检测设置…</p>
+              </div>
+              <details id="home-network-setup">
+                <summary>记住可代理的 Wi-Fi</summary>
+                <p class="form-hint">支持家庭路由器、随身 Wi-Fi 等多个网络。连接要添加的 Wi-Fi，填写经它可访问的虚拟 IP，验证后保存，再选择自动模式。</p>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label" for="home-network-target">虚拟网络验证地址</label>
+                    <input id="home-network-target" class="form-input font-mono" inputmode="decimal" placeholder="填写可访问的虚拟 IPv4" autocomplete="off" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="home-network-port">HTTP 端口</label>
+                    <input id="home-network-port" class="form-input" inputmode="numeric" value="80" autocomplete="off" />
+                  </div>
+                </div>
+                <button id="home-network-learn" class="btn btn-secondary" type="button">验证并保存当前 Wi-Fi</button>
+                <p id="home-network-status" class="form-hint" role="status">尚未记住可代理的网络</p>
+                <div id="home-network-list" class="home-network-list"></div>
+                <p class="form-hint">首次保存会强制走当前 Wi-Fi 验证虚拟网络访问，并记住网关 IP/MAC。定时检测继续验证代理；事件检测只在连接变化时匹配网关身份。保存新网络会保留已有记录。</p>
+              </details>
+            </div>
+          </article>
+
+          <!-- Diagnostics Export Card -->
+          <div class="card diagnostic-card">
+            <div class="diagnostic-card-header">
+              <div class="diagnostic-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>诊断日志导出</span>
+              </div>
+              <span class="sec-pill">脱敏安全导出</span>
+            </div>
+            <p class="diagnostic-desc">自动聚合运行日志与路由快照到系统 Download 目录，已自动剔除私密密钥与口令。</p>
+            <div class="diagnostic-action-row">
+              <button class="btn btn-primary" data-control-cmd="export-log" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                导出诊断日志
+              </button>
+              <div id="export-result-box" class="export-result-pill" role="button" tabindex="0" title="点击复制路径">
+                <span class="export-tag">路径:</span>
+                <span id="export-path-text" class="export-path font-mono">尚未导出</span>
+                <span class="copy-hint-icon">📋</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ================= TAB 2: EasyTier 设置 (Settings) ================= -->
+      <section id="tab-settings" class="tab-panel" role="tabpanel" aria-labelledby="nav-tab-settings">
+        <!-- Warning Banner for command_args Mode -->
+        <div id="command-args-warning-banner" class="alert-banner warning-banner" style="display: none;">
+          <div class="alert-banner-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div class="alert-banner-content">
+            <strong class="alert-banner-title">当前处于参数模式 (command_args)</strong>
+            <p class="alert-banner-desc">模块正在使用 command_args 启动参数运行。在此模式下，WebUI 保存 TOML 配置不会直接生效；请在系统内移除 command_args 文件切换为 TOML 配置模式。</p>
+          </div>
+        </div>
+
+        <!-- Error Banner for Config Validation / Save Errors -->
+        <div id="config-error-alert-banner" class="alert-banner error-banner" style="display: none;">
+          <div class="alert-banner-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+          </div>
+          <div class="alert-banner-content">
+            <strong id="config-error-title" class="alert-banner-title">配置校验失败</strong>
+            <pre id="config-error-detail" class="alert-banner-pre font-mono"></pre>
+          </div>
+          <button id="close-config-error-btn" class="alert-close-btn" type="button" aria-label="关闭">✕</button>
+        </div>
+
+        <!-- Settings View Mode Selector -->
+        <div class="settings-mode-bar">
+          <div class="segmented-control">
+            <button id="view-mode-visual-btn" class="segmented-item is-active" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+              </svg>
+              可视化配置
+            </button>
+            <button id="view-mode-toml-btn" class="segmented-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+              </svg>
+              高级 TOML 编辑器
+            </button>
+          </div>
+        </div>
+
+        <!-- Mode A: Visual Form View -->
+        <div id="settings-visual-view" class="settings-subview is-active">
+          <!-- Identity Section -->
+          <article class="card form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                网络身份与寻址
+              </div>
+              <span class="form-card-subtitle">基础连接身份识别</span>
+            </div>
+
+            <div class="form-body">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" for="cfg-instance-name">实例名称 (instance_name)</label>
+                  <input id="cfg-instance-name" class="form-input" type="text" placeholder="default" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">本地唯一标识，默认为 default</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="cfg-hostname">设备主机名 (hostname)</label>
+                  <input id="cfg-hostname" class="form-input" type="text" placeholder="留空自动读取 Android 品牌与型号" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">在 Mesh 拓扑中展示的设备名</span>
+                </div>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" for="cfg-ipv4">虚拟 IPv4 地址 (ipv4)</label>
+                  <input id="cfg-ipv4" class="form-input font-mono" type="text" placeholder="10.144.144.2/24" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">格式: IP/掩码，留空或关闭可使用 DHCP</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">自动获取 IP (DHCP)</label>
+                  <div class="toggle-switch-row">
+                    <span class="toggle-desc-text">由组网内 DHCP 主机分配虚拟 IP</span>
+                    <label class="switch-toggle" for="cfg-dhcp">
+                      <input id="cfg-dhcp" type="checkbox" />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" for="cfg-network-name">组网名称 (network_name)</label>
+                  <input id="cfg-network-name" class="form-input font-mono" type="text" placeholder="default" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">同一虚拟网络节点必须保持一致</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="cfg-network-secret">组网密钥 (network_secret)</label>
+                  <div class="input-password-wrap">
+                    <input id="cfg-network-secret" class="form-input font-mono" type="password" placeholder="未设置密钥" spellcheck="false" autocomplete="off" />
+                    <button id="toggle-secret-btn" class="toggle-pwd-btn" type="button" aria-label="显示/隐藏密钥" title="显示/隐藏密钥">
+                      <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <span class="form-hint">安全保护：默认掩码遮罩显示</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Listeners Section -->
+          <article class="card form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/>
+                </svg>
+                本地监听服务 (listeners)
+              </div>
+              <span class="form-card-subtitle">供其他节点连接的本地协议与端口</span>
+            </div>
+
+            <div class="form-body">
+              <div id="listeners-list-container" class="item-list-container">
+                <!-- Dynamically populated -->
+              </div>
+
+              <div class="add-item-row">
+                <input id="new-listener-input" class="form-input font-mono" type="text" placeholder="例如 tcp://0.0.0.0:11010" spellcheck="false" autocomplete="off" />
+                <button id="add-listener-btn" class="btn btn-secondary" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  添加监听
+                </button>
+              </div>
+              <div class="preset-chips-row">
+                <span class="preset-title">快捷预设:</span>
+                <button class="preset-chip" data-preset-listener="tcp://0.0.0.0:11010" type="button">+ TCP 11010</button>
+                <button class="preset-chip" data-preset-listener="udp://0.0.0.0:11010" type="button">+ UDP 11010</button>
+                <button class="preset-chip" data-preset-listener="wg://0.0.0.0:11011" type="button">+ WG 11011</button>
+                <button class="preset-chip" data-preset-listener="wss://0.0.0.0:11012" type="button">+ WSS 11012</button>
+              </div>
+            </div>
+          </article>
+
+          <!-- Peers Section -->
+          <article class="card form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                对等节点列表 ([[peer]])
+              </div>
+              <span class="form-card-subtitle">连接的服务器或公网中继节点 URI</span>
+            </div>
+
+            <div class="form-body">
+              <div id="peers-list-container" class="item-list-container">
+                <!-- Dynamically populated -->
+              </div>
+
+              <div class="add-item-row">
+                <input id="new-peer-input" class="form-input font-mono" type="text" placeholder="例如 tcp://your-server.example.com:11010" spellcheck="false" autocomplete="off" />
+                <button id="add-peer-btn" class="btn btn-primary" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  添加节点
+                </button>
+              </div>
+              <span class="form-hint">支持协议: tcp://, udp://, wg://, ws://, wss://</span>
+            </div>
+          </article>
+
+          <!-- Advanced Flags & Toggles Section -->
+          <article class="card form-card">
+            <div class="form-card-header">
+              <div class="form-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+                </svg>
+                网络参数与特性开关 ([flags])
+              </div>
+              <span class="form-card-subtitle">MTU、网卡名称与传输特性微调</span>
+            </div>
+
+            <div class="form-body">
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label" for="cfg-mtu">网卡 MTU (mtu)</label>
+                  <input id="cfg-mtu" class="form-input font-mono" type="number" min="576" max="9000" placeholder="1380" />
+                  <span class="form-hint">推荐 1380 或 1420</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cfg-dev-name">TUN 设备名 (dev_name)</label>
+                  <input id="cfg-dev-name" class="form-input font-mono" type="text" placeholder="留空自动分配 tunX，或填 tiernest0" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">留空由 EasyTier 自动分配 tunX；填写 tiernest0 可固定名称</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="cfg-rpc-portal">RPC 管理接口 (rpc_portal)</label>
+                  <input id="cfg-rpc-portal" class="form-input font-mono" type="text" placeholder="127.0.0.1:15888" spellcheck="false" autocomplete="off" />
+                  <span class="form-hint">本地 CLI 交互接口</span>
+                </div>
+              </div>
+
+              <div class="toggles-list-container">
+                <!-- Toggle Item 1: enable_encryption -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🔒 数据加密 (enable_encryption)</span>
+                    <span class="toggle-desc">使用 ChaCha20-Poly1305 对所有组网传输流量进行端到端加密</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-encryption">
+                    <input id="cfg-flag-encryption" type="checkbox" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 2: enable_ipv6 -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🌐 IPv6 支持 (enable_ipv6)</span>
+                    <span class="toggle-desc">允许通过 IPv6 进行节点直连与打洞穿透</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-ipv6">
+                    <input id="cfg-flag-ipv6" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 3: latency_first -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">⚡ 延迟优先模式 (latency_first)</span>
+                    <span class="toggle-desc">优先选择超低延迟路径传输，适合远程桌面与游戏</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-latency">
+                    <input id="cfg-flag-latency" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 4: disable_p2p -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🛡️ 禁用 P2P / 纯中继模式 (disable_p2p)</span>
+                    <span class="toggle-desc">不尝试 NAT 打洞直连，所有流量强制经由已配置的对等节点中继</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-p2p">
+                    <input id="cfg-flag-p2p" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 5: bind_device -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">📱 绑定物理设备 (bind_device)</span>
+                    <span class="toggle-desc">强制套接字绑定到底层出口网卡，防止路由回环</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-bind">
+                    <input id="cfg-flag-bind" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 6: private_mode -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🥷 隐身 / 私有模式 (private_mode)</span>
+                    <span class="toggle-desc">不主动向公共中继广播节点身份与路由信息</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-private">
+                    <input id="cfg-flag-private" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 7: enable_exit_node -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🚪 允许作为出口节点 (enable_exit_node)</span>
+                    <span class="toggle-desc">允许此设备作为网关将流量转发到公共互联网</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-exit">
+                    <input id="cfg-flag-exit" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 8: disable_udp_hole_punching -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🚫 禁用 UDP 打洞 (disable_udp_hole_punching)</span>
+                    <span class="toggle-desc">关闭 UDP NAT 穿透尝试</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-no-udp-punch">
+                    <input id="cfg-flag-no-udp-punch" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 9: disable_tcp_hole_punching -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🚫 禁用 TCP 打洞 (disable_tcp_hole_punching)</span>
+                    <span class="toggle-desc">关闭 TCP NAT 穿透尝试</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-no-tcp-punch">
+                    <input id="cfg-flag-no-tcp-punch" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 10: enable_kcp_proxy -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🚀 启用 KCP TCP 代理（实验性） (enable_kcp_proxy)</span>
+                    <span class="toggle-desc">截获/包装 EasyTier 内的 TCP 流量；在部分小米/HyperOS/定制内核上可能出现“Ping 正常但 HTTP/SSH 等 TCP 超时”，一般建议关闭</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-kcp-proxy">
+                    <input id="cfg-flag-kcp-proxy" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Toggle Item 11: use_smoltcp -->
+                <div class="toggle-card-item">
+                  <div class="toggle-info">
+                    <span class="toggle-title">🧩 用户态 TCP 栈（兼容模式） (use_smoltcp)</span>
+                    <span class="toggle-desc">仅影响 EasyTier 的代理/KCP TCP 路径，不接管整台手机全部 TCP 流量；开启可能增加少量 CPU/内存开销</span>
+                  </div>
+                  <label class="switch-toggle" for="cfg-flag-smoltcp">
+                    <input id="cfg-flag-smoltcp" type="checkbox" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Dynamic Combination Hint for KCP & Smoltcp -->
+                <div id="kcp-smoltcp-combo-hint" class="combo-hint-card is-safe" role="status" aria-live="polite">
+                  <div class="combo-hint-header">
+                    <span id="kcp-smoltcp-combo-title" class="combo-hint-title">✅ 推荐配置：TCP 直连稳定</span>
+                  </div>
+                  <p id="kcp-smoltcp-combo-desc" class="combo-hint-desc">KCP 代理已关闭，所有 TCP 流量使用标准直连模式，无额外开销，各机型兼容性最佳。</p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Route Strategy Switch -->
+          <article class="card form-card route-strategy-card">
+            <div class="form-card-header route-strategy-header">
+              <div>
+                <div class="form-card-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h11a4 4 0 0 1 4 4v1"/><path d="m16 21 4-4-4-4"/><path d="M20 17H9a4 4 0 0 1-4-4v-1"/></svg>
+                  路由方案一键切换
+                </div>
+                <span class="form-card-subtitle">切换后自动清理旧规则并重启 EasyTier</span>
+              </div>
+              <span id="route-strategy-badge" class="state-pill" data-state="loading">
+                <span class="state-dot"></span><span id="route-strategy-badge-text">读取中</span>
+              </span>
+            </div>
+            <div class="form-body">
+              <div class="route-strategy-options">
+                <button id="route-strategy-official-btn" class="route-strategy-option" data-route-strategy="official" type="button">
+                  <strong>官方兼容方案</strong>
+                  <span>auto/upstream · 不镜像 Android 物理网络表</span>
+                  <em>推荐小米 / HyperOS</em>
+                </button>
+                <button id="route-strategy-legacy-btn" class="route-strategy-option" data-route-strategy="legacy" type="button">
+                  <strong>TierNest 经典方案</strong>
+                  <span>dedicated 20110 · 镜像 rmnet/wlan 网络表</span>
+                  <em>推荐 OnePlus Ace 3 Pro</em>
+                </button>
+              </div>
+              <div id="route-strategy-summary" class="route-strategy-summary">正在读取当前策略…</div>
+            </div>
+          </article>
+
+          <!-- Outbound-only Hotspot Client Access -->
+          <article class="card form-card hotspot-access-card">
+            <div class="form-card-header hotspot-access-header">
+              <div>
+                <div class="form-card-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/>
+                  </svg>
+                  热点设备单向访问
+                </div>
+                <span class="form-card-subtitle">热点设备可主动访问 EasyTier；组网侧新连接明确丢弃</span>
+              </div>
+              <span id="hotspot-access-badge" class="state-pill" data-state="stopped">
+                <span class="state-dot"></span>
+                <span id="hotspot-access-badge-text">读取中</span>
+              </span>
+            </div>
+            <div class="form-body">
+              <div class="toggle-card-item hotspot-access-toggle-row">
+                <div class="toggle-info">
+                  <span class="toggle-title">仅允许热点客户端主动访问组网</span>
+                  <span class="toggle-desc">默认关闭。只对当前 EasyTier 虚拟/代理 CIDR 做 SNAT；不发布热点子网，不接管普通互联网。</span>
+                </div>
+                <label class="switch-toggle" for="hotspot-access-toggle">
+                  <input id="hotspot-access-toggle" type="checkbox" />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <div class="hotspot-access-safety-note">
+                <strong>严格单向：</strong>返回包仅允许 <span class="font-mono">ESTABLISHED,RELATED</span>，其他从 EasyTier 转发到热点设备的新连接会被显式丢弃。请勿把热点网段加入 <span class="font-mono">proxy_networks</span>。
+              </div>
+
+              <div class="hotspot-access-grid">
+                <div><span>状态</span><strong id="hotspot-access-status">—</strong></div>
+                <div><span>热点接口</span><strong id="hotspot-access-interface" class="font-mono">—</strong></div>
+                <div><span>热点网段</span><strong id="hotspot-access-cidr" class="font-mono">—</strong></div>
+                <div><span>EasyTier TUN</span><strong id="hotspot-access-tun" class="font-mono">—</strong></div>
+                <div><span>允许目标</span><strong id="hotspot-access-targets">0 个</strong></div>
+                <div><span>热点客户端</span><strong id="hotspot-access-clients">0 台</strong></div>
+              </div>
+
+              <div id="hotspot-access-error" class="hotspot-access-error" style="display: none;"></div>
+              <div class="hotspot-access-actions">
+                <button id="hotspot-access-refresh-btn" class="btn btn-secondary btn-sm" type="button">刷新状态</button>
+                <button id="hotspot-access-reapply-btn" class="btn btn-secondary btn-sm" type="button">安全重应用</button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <!-- Mode B: Advanced TOML Editor View -->
+        <div id="settings-toml-view" class="settings-subview">
+          <article class="card editor-card">
+            <div class="editor-header">
+              <div class="editor-title-row">
+                <span class="editor-badge">TOML 配置</span>
+                <span class="editor-filename">/data/adb/modules/tiernest/config/config.toml</span>
+              </div>
+              <div class="editor-quick-actions">
+                <button id="editor-format-btn" class="btn btn-sm btn-ghost" type="button">从表单同步</button>
+                <button id="editor-reset-template-btn" class="btn btn-sm btn-ghost" type="button">默认模板</button>
+              </div>
+            </div>
+            <div class="editor-textarea-wrapper">
+              <textarea id="toml-raw-editor" class="editor-textarea font-mono" spellcheck="false" placeholder="# EasyTier 完整 TOML 配置文件..."></textarea>
+            </div>
+            <div class="editor-footer">
+              <span id="editor-status-text">就绪</span>
+              <span id="editor-char-count" class="font-mono">0 字符</span>
+            </div>
+          </article>
+        </div>
+
+        <p class="form-hint">备份位置：Download/TierNest/backups/。旧备份自动迁入 legacy-时间 文件夹。</p>
+        <!-- Settings Floating / Docked Action Bar -->
+        <div class="settings-action-bar">
+          <button id="cfg-action-validate" class="btn btn-secondary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span>验证配置</span>
+          </button>
+          <button id="cfg-action-backup" class="btn btn-secondary" type="button" title="备份已保存的配置到 Download/TierNest/backups/">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span>创建备份</span>
+          </button>
+          <button id="cfg-action-reload" class="btn btn-secondary" type="button" title="重新从磁盘读取">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 2v6h6"/><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/></svg>
+            <span>重载</span>
+          </button>
+          <button id="cfg-action-save" class="btn btn-primary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span>保存</span>
+          </button>
+          <button id="cfg-action-save-restart" class="btn btn-accent" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>保存并重启</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= TAB 3: 日志 (Logs) ================= -->
+      <section id="tab-logs" class="tab-panel" role="tabpanel" aria-labelledby="nav-tab-logs">
+        <!-- Log Control Toolbar -->
+        <article class="card log-control-card">
+          <div class="log-top-row">
+            <div class="segmented-control">
+              <button class="segmented-item is-active" data-log-target="tiernest" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                运行日志
+              </button>
+              <button class="segmented-item" data-log-target="network" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                网络监测日志
+              </button>
+              <button class="segmented-item" data-log-target="transport" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/><circle cx="5" cy="12" r="2"/></svg>
+                传输端点
+              </button>
+              <button class="segmented-item" data-log-target="hotspot" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><circle cx="12" cy="20" r="1"/></svg>
+                热点单向
+              </button>
+            </div>
+
+            <div class="log-refresh-controls">
+              <label class="auto-refresh-label" for="log-auto-refresh-toggle">
+                <input id="log-auto-refresh-toggle" type="checkbox" />
+                <span class="auto-refresh-text">自动刷新</span>
+              </label>
+              <button id="log-refresh-btn" class="icon-btn" type="button" aria-label="刷新日志" title="刷新日志">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="log-filter-row">
+            <div class="search-input-wrap">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="log-search-input" class="search-input" type="text" placeholder="实时过滤关键词 (支持正则/大小写不敏感)..." spellcheck="false" autocomplete="off" />
+              <button id="log-clear-search-btn" class="clear-search-btn" type="button" aria-label="清空搜索" style="display: none;">✕</button>
+            </div>
+
+            <div class="log-options-wrap">
+              <select id="log-lines-select" class="form-select">
+                <option value="100">末尾 100 行</option>
+                <option value="200" selected>末尾 200 行</option>
+                <option value="500">末尾 500 行</option>
+                <option value="1000">末尾 1000 行</option>
+              </select>
+              <button id="log-copy-btn" class="btn btn-sm btn-secondary" type="button" title="复制当前视图日志">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                复制
+              </button>
+              <button id="log-scroll-bottom-btn" class="btn btn-sm btn-secondary" type="button" title="滚到底部">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                到底部
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Log Terminal Viewport -->
+        <article class="card log-viewport-card">
+          <div class="log-viewport-header">
+            <div class="log-file-path-tag font-mono" id="log-active-path">/data/adb/modules/tiernest/logs/tiernest.log</div>
+            <div class="log-lines-counter font-mono" id="log-lines-counter">0 行</div>
+          </div>
+          <div id="log-output-container" class="log-terminal-output font-mono">
+            <div class="log-placeholder">正在读取日志…</div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <!-- Bottom Navigation Dock (4 Items) -->
+    <nav class="bottom-nav-dock" aria-label="主要导航">
+      <button id="nav-tab-overview" class="nav-item is-active" data-target="tab-overview" type="button" role="tab" aria-selected="true">
+        <div class="nav-icon-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>
+            <rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>
+          </svg>
+        </div>
+        <span class="nav-label">概览</span>
+      </button>
+
+      <button id="nav-tab-settings" class="nav-item" data-target="tab-settings" type="button" role="tab" aria-selected="false">
+        <div class="nav-icon-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+            <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+            <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+          </svg>
+        </div>
+        <span class="nav-label">EasyTier 设置</span>
+      </button>
+
+      <button id="nav-tab-logs" class="nav-item" data-target="tab-logs" type="button" role="tab" aria-selected="false">
+        <div class="nav-icon-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+        </div>
+        <span class="nav-label">日志</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Action Confirmation Modal Dialog -->
+  <div id="confirm-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-title" class="modal-title">确认操作</h3>
+      </div>
+      <div class="modal-body">
+        <p id="modal-message" class="modal-message">确认要继续执行此操作吗？</p>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" class="btn btn-secondary" type="button">取消</button>
+        <button id="modal-confirm-btn" class="btn btn-primary" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

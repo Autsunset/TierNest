@@ -1,0 +1,28 @@
+instance_name = "default"
+hostname = "FixturePhone"
+ipv4 = "10.9.0.2/24"
+dhcp = false
+listeners = ["tcp://0.0.0.0:11010", "udp://0.0.0.0:11010"]
+mapped_listeners = []
+exit_nodes = []
+rpc_portal = "127.0.0.1:15888"
+custom_unknown_root = "preserve-me"
+
+[network_identity]
+network_name = "fixture-network"
+network_secret = "fixture-secret"
+
+[[peer]]
+uri = "tcp://example.com:11010"
+
+[flags]
+dev_name = "tiernest0"
+enable_encryption = true
+enable_ipv6 = false
+mtu = 1380
+latency_first = false
+disable_p2p = false
+bind_device = true
+private_mode = true
+enable_kcp_proxy = true
+unknown_flag = "preserve-this-too"
