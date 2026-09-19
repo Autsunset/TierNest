@@ -56,6 +56,7 @@ class ConnectionService : VpnService() {
         app = application as TierNestApp
         vpnEngine = app.vpnEngine
         activeService = this
+        pendingStart = null
         detector = HomeDetector(app)
         cm = getSystemService(ConnectivityManager::class.java)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -83,11 +84,12 @@ class ConnectionService : VpnService() {
                     catch (error: Exception) {
                         val cleanupError = runCatching { stopBackend() }.exceptionOrNull()
                         coreActive = false
-                        app.store.update { it.copy(requested = false) }
+                        val message = (error.message ?: "连接失败，请重新连接") +
+                            if (cleanupError != null) "；清理状态未确认，请重新打开 App 检查" else ""
+                        app.store.update { it.copy(requested = false, lastConnectionError = message) }
                         app.dashboard.update { it.copy(phase = "连接失败", busy = false, active = false,
                             detail = "请检查下方错误后重试", cidr = "", table = "", priority = "", routeCount = 0,
-                            error = (error.message ?: "连接失败，请重新连接") +
-                                if (cleanupError != null) "；清理状态未确认，请重新打开 App 检查" else "",
+                            error = message,
                             peers = emptyList(), rxRate = 0f, txRate = 0f) }
                         // No indefinite retry loop after a core/route/root failure.
                         finishService()
@@ -116,10 +118,14 @@ class ConnectionService : VpnService() {
         activeService = this
         currentStartId = startId
         when (intent?.action) {
-            STOP -> app.store.update { it.copy(requested = false) }
+            STOP -> app.store.update { it.copy(requested = false, lastConnectionError = "") }
         }
+        if (app.store.load().requested) app.store.update { it.copy(
+            sessionStartedAt = System.currentTimeMillis(), sessionProcessId = android.os.Process.myPid()) }
         events.trySend(Unit)
-        return START_NOT_STICKY
+        // Recover a system-killed foreground service; explicit stop and core
+        // failures persist requested=false and call stopSelf, so never loop.
+        return START_STICKY
     }
 
     private suspend fun reconcile() {
@@ -252,7 +258,7 @@ class ConnectionService : VpnService() {
     private fun notification(text: String): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, ConnectionService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_tiernest)
+        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_connection)
             .setContentTitle("TierNest · $text").setContentText("点按管理连接").setContentIntent(open)
             .setOngoing(true).setSilent(true).addAction(0, "断开并停止", stop).build()
     }
@@ -263,7 +269,15 @@ class ConnectionService : VpnService() {
     }
 
     override fun onDestroy() {
-        if (activeService === this) activeService = null
+        if (activeService === this) {
+            activeService = null
+            var message = app.store.load().lastConnectionError
+            if (app.store.load().requested) {
+                message = "连接服务已停止；可直接重新连接"
+                app.store.update { it.copy(requested = false, lastConnectionError = message) }
+            }
+            app.dashboard.value = Dashboard(error = message)
+        }
         if (registered) runCatching { cm.unregisterNetworkCallback(callback) }
         if (screenRegistered) runCatching { unregisterReceiver(screen) }
         scope.cancel()
@@ -275,7 +289,7 @@ class ConnectionService : VpnService() {
         scope.launch {
             if (runningMode == ConnectionMode.VPN && app.store.load().connectionMode == ConnectionMode.VPN) {
                 stopReason = "VPN 连接已被系统撤销；可能启用了其他 VPN"
-                request(this@ConnectionService, false)
+                request(this@ConnectionService, false, stopReason)
             }
         }
     }
@@ -286,29 +300,61 @@ class ConnectionService : VpnService() {
         const val RECONCILE = "com.tiernest.app.RECONCILE"
         private const val CHANNEL = "connection"
         private var activeService: ConnectionService? = null
-        fun request(context: Context, connect: Boolean) {
+        private var pendingStart: Any? = null
+
+        /** Called on foreground entry or a tile interaction, not at Application
+         * startup: BootReceiver must still see the persisted resume preference. */
+        fun refreshFromUserAction(context: Context) {
+            val app = context.applicationContext as TierNestApp
+            activeService?.let { it.events.trySend(Unit); return }
+            if (pendingStart != null) return
+            val previous = app.store.load()
+            if (previous.requested) {
+                val reason = ConnectionExitReason.previous(context, previous)
+                app.store.update { it.copy(requested = false, lastConnectionError = reason) }
+                app.dashboard.value = Dashboard(error = reason)
+            }
+        }
+
+        fun request(context: Context, connect: Boolean, stopMessage: String = "") {
             val app = context.applicationContext as TierNestApp
             if (connect && app.store.load().connectionMode == ConnectionMode.VPN && VpnService.prepare(context) != null) {
                 app.dashboard.update { it.copy(error = "请打开 App 并授权 VPN 连接") }
                 return
             }
             // Persist stop before waiting for any running root command or callback.
-            app.store.update { it.copy(requested = connect) }
-            activeService?.let { it.events.trySend(Unit); return }
-            if (!connect) { app.dashboard.value = Dashboard(); return }
+            app.store.update { it.copy(requested = connect, lastConnectionError = if (connect) "" else stopMessage) }
+            activeService?.let { it.stopReason = stopMessage; it.events.trySend(Unit); return }
+            if (!connect) { pendingStart = null; app.dashboard.value = Dashboard(error = stopMessage); return }
+            if (pendingStart != null) return
+            val ticket = Any()
+            pendingStart = ticket
+            app.dashboard.value = Dashboard(phase = "正在准备连接", detail = "正在启动连接服务", busy = true)
             // This intent only reconciles the latest persisted choice. An older
             // queued start intent must never undo a later manual stop.
             try { ContextCompat.startForegroundService(context, Intent(context, ConnectionService::class.java).setAction(RECONCILE)) }
             catch (error: Exception) {
-                app.store.update { it.copy(requested = false) }
-                app.dashboard.update { it.copy(error = "系统拒绝启动服务，请打开 App 操作：${error.javaClass.simpleName}") }
+                pendingStart = null
+                val message = "系统拒绝启动服务，请打开 App 操作：${error.javaClass.simpleName}"
+                app.store.update { it.copy(requested = false, lastConnectionError = message) }
+                app.dashboard.value = Dashboard(error = message)
             }
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (pendingStart === ticket && activeService == null) {
+                    pendingStart = null
+                    if (app.store.load().requested) {
+                        val message = "系统未能启动连接服务；请重新连接"
+                        app.store.update { it.copy(requested = false, lastConnectionError = message) }
+                        app.dashboard.value = Dashboard(error = message)
+                    }
+                }
+            }, 15_000)
         }
         fun settingsChanged(context: Context) {
             val app = context.applicationContext as TierNestApp
             if (app.store.load().requested) {
                 activeService?.let { it.events.trySend(Unit); return }
-                ContextCompat.startForegroundService(context, Intent(context, ConnectionService::class.java).setAction(RECONCILE))
+                request(context, true)
             }
         }
         fun reconnect(context: Context) {

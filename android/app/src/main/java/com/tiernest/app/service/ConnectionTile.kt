@@ -7,6 +7,8 @@ import com.tiernest.app.data.ConnectionMode
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import android.graphics.drawable.Icon
+import com.tiernest.app.R
 import com.tiernest.app.MainActivity
 import com.tiernest.app.TierNestApp
 import kotlinx.coroutines.*
@@ -15,10 +17,12 @@ class ConnectionTile : TileService() {
     private var scope: CoroutineScope? = null
     override fun onStartListening() {
         super.onStartListening()
+        ConnectionService.refreshFromUserAction(this)
         scope?.cancel()
         scope = CoroutineScope(Dispatchers.Main + SupervisorJob()).also { owner ->
             owner.launch { (application as TierNestApp).dashboard.collect { state ->
                 qsTile?.apply {
+                    icon = Icon.createWithResource(this@ConnectionTile, R.drawable.ic_connection)
                     this.state = if ((application as TierNestApp).store.load().requested) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
                     if (Build.VERSION.SDK_INT >= 29) subtitle = state.phase
                     updateTile()
@@ -35,6 +39,7 @@ class ConnectionTile : TileService() {
     @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated") // PendingIntent overload only exists on API 34+.
     private fun toggle() {
         val app = application as TierNestApp
+        ConnectionService.refreshFromUserAction(this)
         val connect = !app.store.load().requested
         val mode = app.store.load().connectionMode
         if (connect && (runCatching { com.tiernest.app.data.ConfigCodec.effective(app.store.readConfig(), mode) }.isFailure ||

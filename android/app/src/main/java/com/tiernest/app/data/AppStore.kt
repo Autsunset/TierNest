@@ -5,6 +5,8 @@ import android.util.AtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 enum class ThemeStyle { MATERIAL, HYPER, CONSOLE }
 enum class ColorMode { SYSTEM, LIGHT, DARK }
@@ -23,11 +25,14 @@ data class Preferences(
     val homes: List<HomeNetwork> = emptyList(), val migrationReview: String = "",
     val accent: String = "mint", val reduceMotion: Boolean = false,
     val connectionMode: ConnectionMode = ConnectionMode.VPN,
+    val lastConnectionError: String = "", val sessionStartedAt: Long = 0, val sessionProcessId: Int = 0,
 )
 
 class AppStore(context: Context) {
     private val prefs = context.getSharedPreferences("tiernest", Context.MODE_PRIVATE)
     private val config = AtomicFile(File(context.filesDir, "config.toml"))
+    private val requestedState = MutableStateFlow(prefs.getBoolean("requested", false))
+    val requested = requestedState.asStateFlow()
 
     @Synchronized fun readConfig(): String = if (config.baseFile.exists()) config.openRead().bufferedReader().use { it.readText() } else ConfigCodec.template
 
@@ -53,7 +58,8 @@ class AppStore(context: Context) {
             prefs.getBoolean("automatic", false), enum("detection", DetectionMode.EVENT, DetectionMode.entries.toTypedArray()),
             prefs.getInt("interval", 30).coerceAtLeast(1), homes, prefs.getString("migrationReview", "").orEmpty(),
             prefs.getString("accent", "mint").orEmpty(), prefs.getBoolean("reduceMotion", false),
-            ModePolicy.initial(prefs.getString("connectionMode", null), prefs.all.isNotEmpty() || config.baseFile.exists()))
+            ModePolicy.initial(prefs.getString("connectionMode", null), prefs.all.isNotEmpty() || config.baseFile.exists()),
+            prefs.getString("lastConnectionError", "").orEmpty(), prefs.getLong("sessionStartedAt", 0), prefs.getInt("sessionProcessId", 0))
     }
 
     @Synchronized fun update(change: (Preferences) -> Preferences): Preferences {
@@ -68,7 +74,10 @@ class AppStore(context: Context) {
             .putString("detection", value.detection.name).putInt("interval", value.interval).putString("homes", homes.toString())
             .putString("migrationReview", value.migrationReview).putString("accent", value.accent)
             .putBoolean("reduceMotion", value.reduceMotion).putString("connectionMode", value.connectionMode.name)
+            .putString("lastConnectionError", value.lastConnectionError)
+            .putLong("sessionStartedAt", value.sessionStartedAt).putInt("sessionProcessId", value.sessionProcessId)
             .commit()) { "偏好保存失败" }
+        requestedState.value = value.requested
         return value
     }
 }

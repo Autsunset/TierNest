@@ -5,14 +5,9 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -21,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -85,18 +79,7 @@ enum class PreferencePage(val title: String) {
                     item { SettingsCard {
                         ChoiceStrip(listOf("跟随系统", "浅色", "深色"), prefs.colors.ordinal, { index -> model.preference { it.copy(colors = ColorMode.entries[index]) } })
                         if (prefs.theme == ThemeStyle.CONSOLE) {
-                            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                accents.forEach { accent ->
-                                    Column(Modifier.selectable(prefs.accent == accent.id, role = Role.RadioButton,
-                                        onClick = { model.preference { it.copy(accent = accent.id) } }).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                        val color = if (appearance.dark) accent.dark else accent.light
-                                        Box(Modifier.size(40.dp).border(if (prefs.accent == accent.id) 2.dp else 0.dp,
-                                            if (prefs.accent == accent.id) MaterialTheme.colorScheme.onSurface else androidx.compose.ui.graphics.Color.Transparent, CircleShape)
-                                            .padding(5.dp).background(color, CircleShape))
-                                        Text(accent.label, style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
+                            AccentPicker(prefs.accent) { accent -> model.preference { it.copy(accent = accent) } }
                         }
                         if (prefs.theme == ThemeStyle.MATERIAL) PreferenceSwitch("壁纸动态取色", "Android 12 及以上可用", prefs.dynamicColor) { value -> model.preference { it.copy(dynamicColor = value) } }
                     } }

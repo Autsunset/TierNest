@@ -1,6 +1,9 @@
 package com.tiernest.app.ui
 
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -26,7 +29,8 @@ val accents = listOf(
     val miuixColors = if (dark) top.yukonga.miuix.kmp.theme.darkColorScheme() else top.yukonga.miuix.kmp.theme.lightColorScheme()
     val console = prefs.theme == ThemeStyle.CONSOLE
     val accent = accents.firstOrNull { it.id == prefs.accent } ?: accents.first()
-    val colors = when {
+    val reduced = prefs.reduceMotion || !android.animation.ValueAnimator.areAnimatorsEnabled()
+    val targetColors = when {
         hyper -> (if (dark) darkColorScheme() else lightColorScheme()).copy(
             primary = miuixColors.primary, onPrimary = miuixColors.onPrimary,
             primaryContainer = miuixColors.primaryContainer, onPrimaryContainer = miuixColors.onPrimaryContainer,
@@ -61,9 +65,19 @@ val accents = listOf(
             surfaceContainer = Color(if (hyper) 0xFFFFFFFF else 0xFFEDF1FA),
             surfaceContainerLow = Color.White, surfaceContainerHigh = Color(0xFFE7ECF6))
     }
+    // One shared color transition prevents different controls from flashing at
+    // different times when the accent changes. Rapid choices retarget in place.
+    val colorSpec = if (console) tween<Color>(if (reduced) AppMotion.FADE_MS else AppMotion.DOCK_COLOR_MS,
+        easing = AppMotion.dockEase) else snap<Color>()
+    val primary by animateColorAsState(targetColors.primary, colorSpec, label = "theme-primary")
+    val onPrimary by animateColorAsState(targetColors.onPrimary, colorSpec, label = "theme-on-primary")
+    val primaryContainer by animateColorAsState(targetColors.primaryContainer, colorSpec, label = "theme-primary-container")
+    val onPrimaryContainer by animateColorAsState(targetColors.onPrimaryContainer, colorSpec, label = "theme-on-primary-container")
+    val colors = targetColors.copy(primary = primary, onPrimary = onPrimary,
+        primaryContainer = primaryContainer, onPrimaryContainer = onPrimaryContainer)
     top.yukonga.miuix.kmp.theme.MiuixTheme(colors = miuixColors) {
     CompositionLocalProvider(LocalAppearance provides Appearance(console, dark,
-        prefs.reduceMotion || !android.animation.ValueAnimator.areAnimatorsEnabled(), hyper)) {
+        reduced, hyper)) {
     MaterialTheme(colorScheme = colors,
         shapes = Shapes(medium = RoundedCornerShape(if (hyper) 22.dp else 16.dp),
             large = RoundedCornerShape(if (hyper) 28.dp else 24.dp), extraLarge = RoundedCornerShape(32.dp)),

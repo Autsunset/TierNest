@@ -126,7 +126,11 @@ import kotlinx.coroutines.launch
                     Button(onClick = onConnect, modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = if (prefs.theme == ThemeStyle.HYPER) MaterialTheme.shapes.medium else CircleShape) {
                         Icon(if (prefs.requested) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, null)
-                        Spacer(Modifier.width(8.dp)); Text(if (prefs.requested) "断开并停止" else "连接网络", fontSize = 16.sp)
+                        Spacer(Modifier.width(8.dp)); Text(when {
+                            prefs.requested -> "断开并停止"
+                            state.error.isNotBlank() -> "重新连接"
+                            else -> "连接网络"
+                        }, fontSize = 16.sp)
                     }
                 }
             }

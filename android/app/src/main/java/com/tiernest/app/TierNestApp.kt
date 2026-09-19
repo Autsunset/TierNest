@@ -28,6 +28,7 @@ class TierNestApp : Application() {
     override fun onCreate() {
         super.onCreate()
         store = AppStore(this)
+        dashboard.value = Dashboard(error = store.load().lastConnectionError)
         engine = RootEngine(this)
         backups = com.tiernest.app.data.ConfigurationBackups(this)
         vpnEngine = com.tiernest.app.engine.VpnEngine(this)

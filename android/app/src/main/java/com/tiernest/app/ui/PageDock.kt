@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.snap
@@ -22,8 +21,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,8 +63,9 @@ import androidx.compose.ui.unit.dp
             Row(Modifier.fillMaxSize().selectableGroup()) {
                 items.forEachIndexed { index, (title, icon) ->
                     val selected = pager.currentPage == index
-                    val color by animateColorAsState(if (selected) colors.primary else colors.onSurfaceVariant,
+                    val selection by animateFloatAsState(if (selected) 1f else 0f,
                         tween(if (appearance.reduceMotion) AppMotion.FADE_MS else AppMotion.DOCK_COLOR_MS, easing = AppMotion.dockEase), label = "dock-color")
+                    val color = lerp(colors.onSurfaceVariant, colors.primary, selection)
                     Column(Modifier.weight(1f).fillMaxHeight().selectable(selected, role = Role.Tab,
                         interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { onSelect(index) }),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {

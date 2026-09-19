@@ -10,8 +10,6 @@ import com.tiernest.app.engine.NativeVpn
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -31,9 +29,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val writes = Mutex()
     private val preferenceWrites = Mutex()
     private var preferenceRevision = 0L
-    init { viewModelScope.launch { dashboard.map { it.phase }.distinctUntilChanged().collect { reloadPreferences() } } }
+    init { viewModelScope.launch { app.store.requested.collect { requested -> prefs.update { it.copy(requested = requested) } } } }
 
     fun reloadPreferences() { prefs.update { it.copy(requested = app.store.load().requested) } }
+    fun refreshConnection() { ConnectionService.refreshFromUserAction(app); reloadPreferences() }
     fun preference(change: (Preferences) -> Preferences) {
         val revision = ++preferenceRevision
         prefs.value = change(prefs.value) // Immediate visual feedback; fsync stays off the UI thread.
@@ -45,7 +44,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
                     val old = app.store.load()
                     old to app.store.update(change)
                 } }
-                if (revision == preferenceRevision) prefs.value = next
+                if (revision == preferenceRevision) prefs.value = next.copy(requested = app.store.requested.value)
                 if (old.screenSuspend != next.screenSuspend || old.automatic != next.automatic || old.homes != next.homes ||
                     old.detection != next.detection || old.interval != next.interval) ConnectionService.settingsChanged(app)
             } catch (error: Exception) {
