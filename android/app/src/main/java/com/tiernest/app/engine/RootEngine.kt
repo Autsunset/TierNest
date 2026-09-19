@@ -69,7 +69,8 @@ class RootEngine(private val context: Context) {
     suspend fun start(config: String, owner: String) = command(retain = true) {
         if (connectionOwner != null && connectionOwner != owner) it.call("stop")
         connectionOwner = owner
-        File(stage, "effective.toml").writeText(ConfigCodec.effective(config))
+        File(stage, "effective.toml").writeText(ConfigCodec.effective(config,
+            defaultHostname = com.tiernest.app.data.DeviceName.current(context)))
         it.call("start")
     }
 
@@ -97,7 +98,8 @@ class RootEngine(private val context: Context) {
     }
 
     suspend fun validate(config: String) = command {
-        File(stage, "effective.toml").writeText(ConfigCodec.effective(config))
+        File(stage, "effective.toml").writeText(ConfigCodec.effective(config,
+            defaultHostname = com.tiernest.app.data.DeviceName.current(context)))
         it.call("validate")
     }
 

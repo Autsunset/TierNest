@@ -22,6 +22,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     val editor = MutableStateFlow(ConfigDraft.load(config.value))
     val editorError = MutableStateFlow("")
     val homeError = MutableStateFlow("")
+    val deviceName = MutableStateFlow(DeviceName.current(app))
     val preferencePage = MutableStateFlow(com.tiernest.app.ui.PreferencePage.HOME)
     var selectedPage = 0
     val busy = MutableStateFlow(false)
@@ -32,7 +33,11 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     init { viewModelScope.launch { app.store.requested.collect { requested -> prefs.update { it.copy(requested = requested) } } } }
 
     fun reloadPreferences() { prefs.update { it.copy(requested = app.store.load().requested) } }
-    fun refreshConnection() { ConnectionService.refreshFromUserAction(app); reloadPreferences() }
+    fun refreshConnection() {
+        deviceName.value = DeviceName.current(app)
+        ConnectionService.refreshFromUserAction(app)
+        reloadPreferences()
+    }
     fun preference(change: (Preferences) -> Preferences) {
         val revision = ++preferenceRevision
         prefs.value = change(prefs.value) // Immediate visual feedback; fsync stays off the UI thread.
@@ -80,7 +85,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private suspend fun validateConfiguration(text: String) {
         val mode = app.store.load().connectionMode
         if (mode == ConnectionMode.ROOT) app.engine.validate(text)
-        else withContext(Dispatchers.IO) { NativeVpn.validate(ConfigCodec.effective(text, mode)) }
+        else withContext(Dispatchers.IO) { NativeVpn.validate(ConfigCodec.effective(text, mode, DeviceName.current(app))) }
     }
 
     private suspend fun backupConfiguration(text: String): String =

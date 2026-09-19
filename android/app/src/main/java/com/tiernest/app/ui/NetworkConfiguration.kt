@@ -83,7 +83,10 @@ private data class EndpointEdit(val kind: EndpointKind, val index: Int = -1, val
                     } }
                     item { GroupLabel("本机与地址") }
                     item { SettingsCard {
-                        EditorField("设备名称", form.hostname, { model.editForm { f -> f.copy(hostname = it) } }, "留空使用系统名称")
+                        val systemName by model.deviceName.collectAsStateWithLifecycle()
+                        EditorField("设备名称", form.hostname, { model.editForm { f -> f.copy(hostname = it) } }, "自动：$systemName")
+                        SmallNote(if (form.hostname.isBlank()) "下次连接自动使用：$systemName" else
+                            "已使用配置中的名称；清空后自动使用：$systemName")
                         EditorField("实例名称", form.instanceName, { model.editForm { f -> f.copy(instanceName = it) } })
                         HorizontalDivider()
                         PreferenceSwitch("自动分配 IPv4", "开启 DHCP；已有静态地址会保留在草稿中", form.dhcp) { model.editForm { f -> f.copy(dhcp = it) } }

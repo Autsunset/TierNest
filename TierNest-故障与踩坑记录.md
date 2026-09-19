@@ -1373,3 +1373,20 @@ alpha06 将请求状态作为独立 StateFlow 订阅，在用户打开 App/磁�
 弹簧。强调色共用 250ms 颜色过渡，快速选择会从当前值继续；减少动态效果时去除
 位移。云手机快速换色采样 95 帧、2 帧 jank，p50=8ms、p90=12ms；软件渲染模拟器
 明显更慢，不能用这些环境的数字承诺实体手机帧率。
+
+## 2026-09-20：设备名称留空仍广播 localhost
+
+配置页原先提示「留空使用系统名称」，但生成运行副本时没有读取 Android 的友好
+设备名。EasyTier 2.6.4 未配置 hostname 时直接调用操作系统 gethostname，Android
+通常返回 localhost，导致不同客户端在节点列表里同名。
+
+alpha07 在 Root/VPN 启动与校验时读取 Settings.Global.DEVICE_NAME；缺失或为
+localhost 等占位名时回退到 Build.MANUFACTURER / MODEL，品牌不重复拼接。
+仅填入缺失或空白的运行副本字段，保留原 TOML 及显式指定的名称，包括显式 localhost。
+非字符串 hostname 仍报配置错误，不能被默认值掩盖。自动名称按上游规则限制为
+32 个 Unicode 字符，不截断 emoji 的代理对，不读取序列号、Android ID 或蓝牙信息。
+
+新增 7 项回归覆盖系统名称优先、型号回退、Unicode 长度、双模式运行副本、显式
+名称保留、空名称和无效类型。合成 Android 设备名通过真实 EasyTier P2P 发送给
+独立测试节点，并由对端 CLI 读回；连接前后原始 TOML 字节一致。界面显示实际
+自动名称预览。远端原有 localhost 需在对应设备改名或升级后重新连接。

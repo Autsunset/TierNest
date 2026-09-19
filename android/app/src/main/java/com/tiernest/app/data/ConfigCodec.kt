@@ -161,7 +161,7 @@ object ConfigCodec {
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun effective(text: String, mode: ConnectionMode = ConnectionMode.ROOT): String {
+    fun effective(text: String, mode: ConnectionMode = ConnectionMode.ROOT, defaultHostname: String? = null): String {
         val config = parse(text)
         val form = form(text)
         require(form.name.isNotBlank()) { "请先填写网络名称" }
@@ -173,6 +173,8 @@ object ConfigCodec {
         require(flags["no_tun"] != true) { "App 组网需要 TUN，不能设置 no_tun=true" }
         require(flags["enable_exit_node"] != true) { "共存模式不能启用出口节点" }
         // Private runtime copy: importing or upgrading never rewrites source TOML.
+        require(config["hostname"] == null || config["hostname"] is String) { "设备名称 hostname 必须是字符串" }
+        if (form.hostname.isBlank() && !defaultHostname.isNullOrBlank()) config["hostname"] = defaultHostname
         flags["dev_name"] = if (mode == ConnectionMode.ROOT) "tiernest0" else ""
         flags["no_tun"] = false
         if (mode == ConnectionMode.VPN) flags["bind_device"] = false

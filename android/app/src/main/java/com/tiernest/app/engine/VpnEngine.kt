@@ -35,7 +35,7 @@ class VpnEngine(private val context: Context) {
         withContext(Dispatchers.IO) {
             check(VpnService.prepare(context) == null) { "请先在 App 中授权 VPN 连接" }
             stopLocked()
-            val effective = ConfigCodec.effective(config, ConnectionMode.VPN)
+            val effective = ConfigCodec.effective(config, ConnectionMode.VPN, DeviceName.current(context))
             mtu = ConfigCodec.form(effective).mtu.toIntOrNull()?.coerceIn(576, 9000) ?: 1380
             NativeVpn.validate(effective)
             NativeVpn.start(effective)
