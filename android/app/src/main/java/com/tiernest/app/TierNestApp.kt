@@ -3,6 +3,8 @@ package com.tiernest.app
 import android.app.Application
 import com.tiernest.app.data.AppStore
 import com.tiernest.app.engine.RootEngine
+import com.tiernest.app.diagnostics.AppDiagnostics
+import com.tiernest.app.diagnostics.LogEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 
 data class Dashboard(
@@ -18,6 +20,7 @@ data class Dashboard(
 )
 
 class TierNestApp : Application() {
+    lateinit var diagnostics: AppDiagnostics; private set
     lateinit var store: AppStore; private set
     lateinit var engine: RootEngine; private set
     lateinit var backups: com.tiernest.app.data.ConfigurationBackups; private set
@@ -27,9 +30,12 @@ class TierNestApp : Application() {
     val uiDataVisible = MutableStateFlow(false)
     override fun onCreate() {
         super.onCreate()
+        diagnostics = AppDiagnostics(this)
+        diagnostics.installCrashHandler()
+        diagnostics.event(LogEvent.APP_START)
         store = AppStore(this)
         dashboard.value = Dashboard(error = store.load().lastConnectionError)
-        engine = RootEngine(this)
+        engine = RootEngine(this, diagnostics)
         backups = com.tiernest.app.data.ConfigurationBackups(this)
         vpnEngine = com.tiernest.app.engine.VpnEngine(this)
     }

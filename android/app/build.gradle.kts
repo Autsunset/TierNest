@@ -11,8 +11,8 @@ android {
         applicationId = "com.tiernest.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.2.0-alpha07"
+        versionCode = 8
+        versionName = "0.2.0-alpha08"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }

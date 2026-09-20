@@ -23,6 +23,20 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     val editorError = MutableStateFlow("")
     val homeError = MutableStateFlow("")
     val deviceName = MutableStateFlow(DeviceName.current(app))
+    val diagnosticLogging = app.diagnostics.enabled
+    val diagnosticStorageError = app.diagnostics.storageError
+
+    fun setDiagnosticLogging(enabled: Boolean) = task { app.diagnostics.setEnabled(enabled) }
+    fun clearDiagnostics() = task { app.diagnostics.clear(); message.value = "本机诊断日志已清空" }
+    fun exportDiagnostics(uri: android.net.Uri) = task {
+        val report = app.diagnostics.report().toByteArray(Charsets.UTF_8)
+        app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(report) } ?: error("无法写入诊断文件")
+        message.value = "诊断日志已导出，可从文件管理器发送"
+    }
+    fun diagnosticExportUnavailable(error: Exception) {
+        app.diagnostics.event(com.tiernest.app.diagnostics.LogEvent.OPERATION_FAILED, error)
+        message.value = "系统无法打开保存界面，请检查系统文件管理器是否可用"
+    }
     val preferencePage = MutableStateFlow(com.tiernest.app.ui.PreferencePage.HOME)
     var selectedPage = 0
     val busy = MutableStateFlow(false)
@@ -53,6 +67,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
                 if (old.screenSuspend != next.screenSuspend || old.automatic != next.automatic || old.homes != next.homes ||
                     old.detection != next.detection || old.interval != next.interval) ConnectionService.settingsChanged(app)
             } catch (error: Exception) {
+                app.diagnostics.event(com.tiernest.app.diagnostics.LogEvent.SETTINGS_FAILED, error)
                 if (revision == preferenceRevision) prefs.value = app.store.load()
                 message.value = error.message ?: "设置保存失败"
             }
@@ -60,8 +75,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun connect() {
-        if (busy.value) { message.value = "请等待当前操作完成"; return }
         val requested = app.store.load().requested
+        if (busy.value && !requested) { message.value = "请等待当前操作完成"; return }
         if (!requested && !canConnect()) return
         ConnectionService.request(app, !requested)
         reloadPreferences()
@@ -97,7 +112,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try { withContext(Dispatchers.IO) { writes.withLock { block() } } }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { message.value = error.message ?: "操作失败" }
+            catch (error: Exception) {
+                app.diagnostics.event(com.tiernest.app.diagnostics.LogEvent.OPERATION_FAILED, error)
+                message.value = error.message ?: "操作失败"
+            }
             finally { busy.value = false }
         }
     }

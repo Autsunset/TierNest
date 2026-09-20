@@ -24,7 +24,7 @@ import com.tiernest.app.BuildConfig
 import com.tiernest.app.data.*
 
 enum class PreferencePage(val title: String) {
-    HOME("设置"), APPEARANCE("外观与动效"), SERVICE("运行与省电"), WIFI("家庭网络"), BACKUP("备份与迁移"), ABOUT("关于 TierNest")
+    HOME("设置"), APPEARANCE("外观与动效"), SERVICE("运行与省电"), WIFI("家庭网络"), BACKUP("备份与迁移"), DIAGNOSTICS("诊断日志"), ABOUT("关于 TierNest")
 }
 
 @Composable fun AppPreferences(model: AppModel, active: Boolean, onOpenConfig: () -> Unit, onImport: () -> Unit, onSubpage: (Boolean) -> Unit) {
@@ -37,6 +37,8 @@ enum class PreferencePage(val title: String) {
     var learn by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf<HomeNetwork?>(null) }
     var migrationConfirm by remember { mutableStateOf(false) }
+    var clearLogs by remember { mutableStateOf(false) }
+    val exportDiagnostics = rememberDiagnosticsExport(model)
     BackHandler(active && page != PreferencePage.HOME) { model.preferencePage.value = PreferencePage.HOME }
     AnimatedContent(page, modifier = Modifier.fillMaxSize(), transitionSpec = {
         if (appearance.reduceMotion) (fadeIn(tween(AppMotion.FADE_MS)) togetherWith fadeOut(tween(AppMotion.FADE_MS))).using(null)
@@ -64,6 +66,7 @@ enum class PreferencePage(val title: String) {
                     item { SettingsCard(padding = 4.dp) {
                         PreferenceRow(Icons.Rounded.Palette, "外观与动效", "主题、配色、明暗与减少动态效果", styleName(prefs.theme)) { model.preferencePage.value = PreferencePage.APPEARANCE }
                         PreferenceRow(Icons.Rounded.FolderOpen, "备份与迁移", "导入配置、创建备份、从模块迁移") { model.preferencePage.value = PreferencePage.BACKUP }
+                        PreferenceRow(Icons.Rounded.BugReport, "诊断日志", "闪退与断连记录、导出排查") { model.preferencePage.value = PreferencePage.DIAGNOSTICS }
                         PreferenceRow(Icons.Rounded.Info, "关于 TierNest", "版本与运行要求", BuildConfig.VERSION_NAME.substringBefore('-')) { model.preferencePage.value = PreferencePage.ABOUT }
                     } }
                     if (prefs.migrationReview.isNotBlank()) item { TextButton(onClick = { model.preferencePage.value = PreferencePage.BACKUP }) { Text("导入配置需要检查，点此继续") } }
@@ -164,6 +167,24 @@ enum class PreferencePage(val title: String) {
                     } }
                     if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 }
+                PreferencePage.DIAGNOSTICS -> {
+                    item { SettingsCard {
+                        val logging by model.diagnosticLogging.collectAsStateWithLifecycle()
+                        val storageError by model.diagnosticStorageError.collectAsStateWithLifecycle()
+                        PreferenceSwitch("记录诊断日志", "只保存在本机，自动限制大小", logging, model::setDiagnosticLogging)
+                        SmallNote("记录机型、系统版本、连接事件和异常调用栈。不记录配置、网络密钥、节点地址或设备自定义名称。")
+                        if (storageError) SmallNote("日志暂时无法写入，请检查应用可用存储空间。", error = true)
+                    } }
+                    item { SettingsCard {
+                        Text("出现问题后", fontWeight = FontWeight.SemiBold)
+                        SmallNote("闪退后重新打开 App，直接导出日志。上次的应用崩溃记录会保留；导出时可选择保存到下载目录，再自行发送。")
+                        Button(onClick = exportDiagnostics, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.SaveAlt, null); Spacer(Modifier.width(8.dp)); Text("导出诊断日志")
+                        }
+                        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        TextButton(onClick = { clearLogs = true }, enabled = !busy) { Text("清空本机日志") }
+                    } }
+                }
                 PreferencePage.ABOUT -> {
                     item { SettingsCard {
                         Text("TierNest ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge)
@@ -186,6 +207,10 @@ enum class PreferencePage(val title: String) {
             }
         }
     }
+    if (clearLogs) AlertDialog(onDismissRequest = { clearLogs = false }, title = { Text("清空本机诊断日志？") },
+        text = { Text("将删除本机事件和崩溃记录，已经导出的文件不受影响。排查问题前建议先导出。") },
+        confirmButton = { TextButton(onClick = { clearLogs = false; model.clearDiagnostics() }) { Text("清空") } },
+        dismissButton = { TextButton(onClick = { clearLogs = false }) { Text("取消") } })
     if (learn) {
         var target by remember { mutableStateOf("") }
         var port by remember { mutableStateOf("80") }

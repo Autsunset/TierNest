@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.tiernest.app.diagnostics.LogEvent
 
 class ConnectionService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -40,6 +41,7 @@ class ConnectionService : VpnService() {
     private var runningMode: ConnectionMode? = null
     private var coreStartedAt = 0L
     private var stopReason = ""
+    private var loggedPhase: DesiredConnection? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { events.trySend(Unit) }
@@ -57,6 +59,7 @@ class ConnectionService : VpnService() {
         vpnEngine = app.vpnEngine
         activeService = this
         pendingStart = null
+        app.diagnostics.event(LogEvent.SERVICE_CREATE)
         detector = HomeDetector(app)
         cm = getSystemService(ConnectivityManager::class.java)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -68,13 +71,13 @@ class ConnectionService : VpnService() {
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED)
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED).build(), callback)
             registered = true
-        } catch (_: Exception) { eventHealthy = false }
+        } catch (error: Exception) { eventHealthy = false; app.diagnostics.event(LogEvent.EVENT_SOURCE_FAILED, error) }
         try {
             ContextCompat.registerReceiver(this, screen, IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
             }, ContextCompat.RECEIVER_NOT_EXPORTED)
             screenRegistered = true
-        } catch (_: Exception) { eventHealthy = false }
+        } catch (error: Exception) { eventHealthy = false; app.diagnostics.event(LogEvent.EVENT_SOURCE_FAILED, error) }
         scope.launch {
             try {
                 for (ignored in events) {
@@ -82,6 +85,7 @@ class ConnectionService : VpnService() {
                     try { operations.withLock { reconcile() } }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
+                        app.diagnostics.event(LogEvent.CONNECTION_FAILED, error, mode = runningMode?.name)
                         val cleanupError = runCatching { stopBackend() }.exceptionOrNull()
                         coreActive = false
                         val message = (error.message ?: "连接失败，请重新连接") +
@@ -117,8 +121,13 @@ class ConnectionService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         activeService = this
         currentStartId = startId
+        app.diagnostics.event(LogEvent.SERVICE_START, mode = app.store.load().connectionMode.name)
         when (intent?.action) {
-            STOP -> app.store.update { it.copy(requested = false, lastConnectionError = "") }
+            STOP -> {
+                app.diagnostics.event(LogEvent.STOP_REQUEST, mode = app.store.load().connectionMode.name)
+                stopReason = ""
+                app.store.update { it.copy(requested = false, lastConnectionError = "") }
+            }
         }
         if (app.store.load().requested) app.store.update { it.copy(
             sessionStartedAt = System.currentTimeMillis(), sessionProcessId = android.os.Process.myPid()) }
@@ -148,6 +157,14 @@ class ConnectionService : VpnService() {
         } else detector.reset()
         val desired = ConnectionPolicy.decide(app.store.load().requested, prefs.screenSuspend && screenRegistered,
             getSystemService(PowerManager::class.java).isInteractive, automatic, home, eventHealthy)
+        if (desired != loggedPhase) {
+            when (desired) {
+                DesiredConnection.HOME_STANDBY -> app.diagnostics.event(LogEvent.HOME_STANDBY)
+                DesiredConnection.SCREEN_STANDBY -> app.diagnostics.event(LogEvent.SCREEN_STANDBY)
+                else -> Unit
+            }
+            loggedPhase = desired
+        }
         if (desired == DesiredConnection.STOPPED) {
             app.dashboard.update { it.copy(phase = "正在断开", busy = true) }
             stopBackend(); coreActive = false; lastSample = null
@@ -168,6 +185,7 @@ class ConnectionService : VpnService() {
         } else {
             val physical = detector.physicalSignature()
             if (coreActive && (signature != physical || pendingReconnect || runningMode != prefs.connectionMode)) {
+                app.diagnostics.event(LogEvent.NETWORK_CHANGED, mode = runningMode?.name)
                 stopBackend(); coreActive = false; lastSample = null
             }
             pendingReconnect = false
@@ -177,6 +195,7 @@ class ConnectionService : VpnService() {
                 notifyState("正在连接")
                 val configuration = withContext(Dispatchers.IO) { app.store.readConfig() }
                 runningMode = prefs.connectionMode
+                app.diagnostics.event(LogEvent.CORE_START, mode = runningMode?.name)
                 if (runningMode == ConnectionMode.VPN) vpnEngine.start(configuration, owner)
                 else app.engine.start(configuration, owner)
                 coreStartedAt = SystemClock.elapsedRealtime()
@@ -193,6 +212,7 @@ class ConnectionService : VpnService() {
                 }
                 check(ready) { "未取得虚拟 IPv4；请检查节点连接和 DHCP 配置" }
                 coreActive = true
+                app.diagnostics.event(LogEvent.CORE_READY, mode = runningMode?.name)
             }
             sample(syncRoutes = true)
             app.dashboard.update { it.copy(phase = "核心运行", detail = if (runningMode == ConnectionMode.VPN)
@@ -241,6 +261,7 @@ class ConnectionService : VpnService() {
 
     private suspend fun backendStatus() = if (runningMode == ConnectionMode.VPN) vpnEngine.status() else app.engine.status()
     private suspend fun stopBackend() {
+        if (runningMode != null) app.diagnostics.event(LogEvent.CORE_STOP, mode = runningMode?.name)
         when (runningMode) {
             ConnectionMode.VPN -> vpnEngine.stop(owner)
             ConnectionMode.ROOT -> app.engine.stop(owner)
@@ -269,6 +290,7 @@ class ConnectionService : VpnService() {
     }
 
     override fun onDestroy() {
+        app.diagnostics.event(LogEvent.SERVICE_DESTROY, mode = runningMode?.name)
         if (activeService === this) {
             activeService = null
             var message = app.store.load().lastConnectionError
@@ -288,6 +310,7 @@ class ConnectionService : VpnService() {
         // Revoke can arrive on a Binder thread and from an old VPN session.
         scope.launch {
             if (runningMode == ConnectionMode.VPN && app.store.load().connectionMode == ConnectionMode.VPN) {
+                app.diagnostics.event(LogEvent.VPN_REVOKED)
                 stopReason = "VPN 连接已被系统撤销；可能启用了其他 VPN"
                 request(this@ConnectionService, false, stopReason)
             }
@@ -310,6 +333,7 @@ class ConnectionService : VpnService() {
             if (pendingStart != null) return
             val previous = app.store.load()
             if (previous.requested) {
+                app.diagnostics.event(LogEvent.ORPHANED_REQUEST, mode = previous.connectionMode.name)
                 val reason = ConnectionExitReason.previous(context, previous)
                 app.store.update { it.copy(requested = false, lastConnectionError = reason) }
                 app.dashboard.value = Dashboard(error = reason)
@@ -318,6 +342,8 @@ class ConnectionService : VpnService() {
 
         fun request(context: Context, connect: Boolean, stopMessage: String = "") {
             val app = context.applicationContext as TierNestApp
+            app.diagnostics.event(if (connect) LogEvent.CONNECT_REQUEST else LogEvent.STOP_REQUEST,
+                mode = app.store.load().connectionMode.name)
             if (connect && app.store.load().connectionMode == ConnectionMode.VPN && VpnService.prepare(context) != null) {
                 app.dashboard.update { it.copy(error = "请打开 App 并授权 VPN 连接") }
                 return
@@ -334,6 +360,7 @@ class ConnectionService : VpnService() {
             // queued start intent must never undo a later manual stop.
             try { ContextCompat.startForegroundService(context, Intent(context, ConnectionService::class.java).setAction(RECONCILE)) }
             catch (error: Exception) {
+                app.diagnostics.event(LogEvent.CONNECTION_FAILED, error)
                 pendingStart = null
                 val message = "系统拒绝启动服务，请打开 App 操作：${error.javaClass.simpleName}"
                 app.store.update { it.copy(requested = false, lastConnectionError = message) }

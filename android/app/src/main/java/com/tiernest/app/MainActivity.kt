@@ -63,6 +63,13 @@ class MainActivity : ComponentActivity() {
             TierNestTheme(prefs) { TierNestScreen(model, pager, ::requestConnection) }
         }
     }
-    override fun onStart() { super.onStart(); (application as TierNestApp).uiVisible.value = true; model.refreshConnection() }
-    override fun onStop() { (application as TierNestApp).uiVisible.value = false; super.onStop() }
+    override fun onStart() {
+        super.onStart()
+        (application as TierNestApp).apply { uiVisible.value = true; diagnostics.event(com.tiernest.app.diagnostics.LogEvent.UI_ENTER) }
+        model.refreshConnection()
+    }
+    override fun onStop() {
+        (application as TierNestApp).apply { uiVisible.value = false; diagnostics.event(com.tiernest.app.diagnostics.LogEvent.UI_LEAVE) }
+        super.onStop()
+    }
 }
