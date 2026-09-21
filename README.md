@@ -8,7 +8,7 @@
 
 VPN / Root 双模式 · 原生 Compose 界面 · 实时节点拓扑 · TOML 配置管理
 
-[![Release](https://img.shields.io/github/v/release/Autsunset/TierNest?style=flat-square&label=%E5%8F%91%E5%B8%83)](https://github.com/Autsunset/TierNest/releases)
+[![Release](https://img.shields.io/github/v/release/Autsunset/TierNest?include_prereleases&style=flat-square&label=%E5%8F%91%E5%B8%83)](https://github.com/Autsunset/TierNest/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84?style=flat-square&logo=android&logoColor=white)](https://github.com/Autsunset/TierNest/releases)
 [![EasyTier Core](https://img.shields.io/badge/EasyTier%20Core-2.6.4-ff6f00?style=flat-square)](https://github.com/EasyTier/EasyTier)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-blue?style=flat-square)](LICENSE)
@@ -21,24 +21,21 @@ VPN / Root 双模式 · 原生 Compose 界面 · 实时节点拓扑 · TOML 配�
 
 ## 项目简介
 
-TierNest 将 [EasyTier](https://github.com/EasyTier/EasyTier) 异地组网带到 Android，提供两种交付形态：
+TierNest 将 [EasyTier](https://github.com/EasyTier/EasyTier) 异地组网带到 Android，是一个原生 Jetpack Compose 独立应用，支持无需 Root 的 **VPN 模式**与让出 VPN 槽位的 **Root 模式**，不需要先刷入模块。
 
-- **独立 App**：原生 Jetpack Compose 界面，支持无需 Root 的 **VPN 模式**与让出 VPN 槽位的 **Root 模式**，不需要先刷入模块；
-- **通用 Root 模块**：兼容 Magisk / KernelSU / APatch 的后台组网模块，内置 WebUI，覆盖安装自动继承旧配置。
-
-两者基于同一套 EasyTier 核心，可独立使用；App 内置备份与迁移功能，可以把旧模块的配置完整快照导入 Root 模式。
+> **通用 Root 模块已停止发布。** 模块最终版本为 1.1.0，仓库保留其源码与文档，已安装用户可继续使用；建议参考下文[从 Root 模块迁移](#从-root-模块-已停止发布迁移)把配置导入 App 的 Root 模式。
 
 TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 ## 版本速览
 
-| | 独立 App | Root 模块 |
+| | 独立 App | Root 模块（已停止发布） |
 | --- | --- | --- |
-| 当前版本 | 0.2.0-alpha08 | 1.1.0 |
+| 当前版本 | 0.2.0-alpha08 | 1.1.0（最终版） |
+| 发布状态 | 持续更新 | 不再提供新版本 |
 | 系统要求 | Android 8.0+ | arm64 Root 设备 |
 | 支持架构 | VPN：arm64 / x86_64；Root：arm64 | arm64 通用 ZIP |
 | 管理入口 | App 界面（含快捷磁贴、前台通知） | KernelSU WebUI |
-| Root 授权 | 仅 Root 模式需要 | 需要 |
 
 ## 运行模式
 
@@ -83,16 +80,15 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 2. 填写网络名称、密钥、节点 URI，选择 DHCP 或静态 IPv4，保存后连接；
 3. VPN 模式首次连接会弹出系统 VPN 授权；Root 模式由 Root 管理器对 **App** 授权（仅 `adb shell` 能提权不等于 App 已获得 Root）。
 
-> 从旧模块迁移到 Root 模式前，请先在原 TierNest / EasyTier WebUI 停止服务，再到 Root 管理器停用旧模块，避免重复内核和路由；随后可在 App「设置 → 备份与迁移」完整导入旧模块快照。
+### 从 Root 模块（已停止发布）迁移
 
-### Root 模块
+模块不再提供新版本发布，已安装用户可继续使用最终版 `TierNest-v1.1.0-et2.6.4-arm64.zip`。建议迁移到 App 的 Root 模式：
 
-所有 arm64 设备使用同一个 `TierNest-v1.1.0-et2.6.4-arm64.zip`，兼容 Magisk、KernelSU 与 APatch。
+1. 先在原 TierNest WebUI 停止服务，再到 Root 管理器停用旧模块，避免重复内核和路由；
+2. 在 App「设置 → 备份与迁移」完整导入旧模块快照，包括 TOML、命令参数、设置、家庭记录与历史备份；原模块不会被修改或删除；
+3. 不能等价迁移的 command_args、路由策略和热点设置会要求审阅确认，不执行旧设置中的 shell 内容。
 
-- **已有旧模块时直接覆盖安装，不要先卸载**：安装器逐字节继承原有 TOML、命令参数、节点与密钥、路由 / 热点偏好、手动停止状态和历史备份，并在升级前自动备份，复制或合并失败会中止安装。
-- 首次安装使用未配置模板，需要在 WebUI 填写组网信息。
-
-安装、升级与管理功能的详细说明见 [module/README.md](module/README.md)。
+模块的安装、升级、管理功能与文件说明仍保留在 [module/README.md](module/README.md)。
 
 ## 从源码构建
 
@@ -100,7 +96,7 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 # 独立 App：输出 dist/TierNest-App-v0.2.0-alpha08.apk
 ./scripts/build-android.sh
 
-# 通用 Root 模块 ZIP
+# 通用 Root 模块 ZIP（模块已停止发布，源码仍在仓库）
 ./scripts/build-module.sh
 ```
 
@@ -116,7 +112,7 @@ App 构建环境：Linux x86_64、JDK 17、Android SDK 36、NDK `28.2.13676358`�
 | --- | --- |
 | [android/README.md](android/README.md) | App 使用、诊断日志、配置与备份、构建、验证范围 |
 | [android/PLAN.zh-CN.md](android/PLAN.zh-CN.md) | App 方案与验证记录 |
-| [module/README.md](module/README.md) | 模块安装升级、管理功能、文件与命令 |
+| [module/README.md](module/README.md) | 模块安装升级、管理功能、文件与命令（模块已停止发布） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史 |
 | [TierNest-故障与踩坑记录.md](TierNest-故障与踩坑记录.md) | 故障与踩坑记录 |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | 第三方组件与许可声明 |
