@@ -5,6 +5,16 @@ import org.junit.Test
 import java.nio.file.Files
 
 class DiagnosticRecordsTest {
+    @Test fun transportTraceUsesOnlyTypedPhasesNumbersAndBooleans() {
+        val record = DiagnosticRecords.entry(LogEvent.ROOT_COMMAND_FAILED,
+            IllegalStateException("do not export this payload"), action = "status",
+            root = RootCommandTiming(RootCommandPhase.WAITING_REPLY, 25_000, 40_000, 2, null, true),
+            recovery = com.tiernest.app.data.RecoveryDecision.RETRY)
+        assertTrue(record.contains("decision=RETRY phase=WAITING_REPLY awake_ms=25000 realtime_ms=40000 write_ms=2 process_alive=true"))
+        assertFalse(record.contains("first_line_ms="))
+        assertFalse(record.contains("do not export this payload"))
+    }
+
     @Test fun exceptionsKeepFramesButNeverEchoSecretsOrAddresses() {
         val sensitive = "secret-fixture tcp://peer.example.invalid:1234 192.0.2.99 network_name=private-name"
         val cause = IllegalArgumentException(sensitive)

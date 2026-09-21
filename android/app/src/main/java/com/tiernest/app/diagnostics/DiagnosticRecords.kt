@@ -11,9 +11,15 @@ enum class LogEvent {
     CONNECT_REQUEST, STOP_REQUEST, CORE_START, CORE_READY, CORE_STOP, CONNECTION_FAILED,
     HOME_STANDBY, SCREEN_STANDBY, NETWORK_CHANGED, VPN_REVOKED, ORPHANED_REQUEST,
     ROOT_SESSION_OPEN, ROOT_SESSION_CLOSE, ROOT_COMMAND_DONE, ROOT_COMMAND_FAILED,
-    ROOT_OUTPUT_FAILED, OPERATION_FAILED, SETTINGS_FAILED, EVENT_SOURCE_FAILED,
+    ROOT_OUTPUT_FAILED, ROOT_RECOVERY, OPERATION_FAILED, SETTINGS_FAILED, EVENT_SOURCE_FAILED,
     EXPORT, LOGGING_ENABLED, FATAL
 }
+
+enum class RootCommandPhase { QUEUED, WRITING, WAITING_REPLY, READING_REPLY, REPLY_COMPLETE }
+
+/** Fixed fields only; never carries a command payload or response text. */
+data class RootCommandTiming(val phase: RootCommandPhase, val awakeMs: Long, val realtimeMs: Long,
+                             val writeMs: Long?, val firstLineMs: Long?, val processAlive: Boolean)
 
 /** No Throwable.message/toString, configuration, addresses or pipe contents.
  * Stack frames are enough to locate the failing code without echoing input. */
@@ -24,13 +30,23 @@ object DiagnosticRecords {
 
     fun entry(event: LogEvent, error: Throwable? = null, action: String? = null,
               mode: String? = null, elapsedMs: Long? = null, code: Int? = null,
-              at: Long = System.currentTimeMillis(), versionCode: Int? = null): String = buildString {
+              at: Long = System.currentTimeMillis(), versionCode: Int? = null,
+              root: RootCommandTiming? = null, recovery: com.tiernest.app.data.RecoveryDecision? = null): String = buildString {
         append(Instant.ofEpochMilli(at)).append(' ').append(event.name)
         if (versionCode != null) append(" version_code=").append(versionCode)
         if (action != null) append(" action=").append(action.takeIf { it in actions } ?: "unknown")
         if (mode != null) append(" mode=").append(mode.takeIf { it == "ROOT" || it == "VPN" } ?: "unknown")
         if (elapsedMs != null) append(" elapsed_ms=").append(elapsedMs.coerceAtLeast(0))
         if (code != null) append(" code=").append(code)
+        if (recovery != null) append(" decision=").append(recovery.name)
+        root?.let {
+            append(" phase=").append(it.phase.name)
+            append(" awake_ms=").append(it.awakeMs.coerceAtLeast(0))
+            append(" realtime_ms=").append(it.realtimeMs.coerceAtLeast(0))
+            it.writeMs?.let { ms -> append(" write_ms=").append(ms.coerceAtLeast(0)) }
+            it.firstLineMs?.let { ms -> append(" first_line_ms=").append(ms.coerceAtLeast(0)) }
+            append(" process_alive=").append(it.processAlive)
+        }
         append('\n')
         if (error != null) {
             val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())

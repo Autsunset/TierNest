@@ -31,7 +31,7 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 | | 独立 App | Root 模块（已停止发布） |
 | --- | --- | --- |
-| 当前版本 | 0.2.0-alpha08 | 1.1.0（最终版） |
+| 当前版本 | 0.2.0-alpha09 | 1.1.0（最终版） |
 | 发布状态 | 持续更新 | 不再提供新版本 |
 | 系统要求 | Android 8.0+ | arm64 Root 设备 |
 | 支持架构 | VPN：arm64 / x86_64；Root：arm64 | arm64 通用 ZIP |
@@ -93,7 +93,7 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 ## 从源码构建
 
 ```sh
-# 独立 App：输出 dist/TierNest-App-v0.2.0-alpha08.apk
+# 独立 App：输出 dist/TierNest-App-v0.2.0-alpha09.apk
 ./scripts/build-android.sh
 
 # 通用 Root 模块 ZIP（模块已停止发布，源码仍在仓库）

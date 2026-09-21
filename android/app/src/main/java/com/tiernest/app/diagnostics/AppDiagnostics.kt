@@ -63,12 +63,13 @@ class AppDiagnostics(private val context: Context) {
     }
 
     fun event(event: LogEvent, error: Throwable? = null, action: String? = null,
-              mode: String? = null, elapsedMs: Long? = null, code: Int? = null) {
+              mode: String? = null, elapsedMs: Long? = null, code: Int? = null,
+              root: RootCommandTiming? = null, recovery: com.tiernest.app.data.RecoveryDecision? = null) {
         if (!enabled.value) return
         // Logging failure must never become the next application crash.
         runCatching {
             if (!queue.trySend(Work.Append(DiagnosticRecords.entry(event, error, action, mode, elapsedMs, code,
-                versionCode = BuildConfig.VERSION_CODE))).isSuccess) dropped.incrementAndGet()
+                versionCode = BuildConfig.VERSION_CODE, root = root, recovery = recovery))).isSuccess) dropped.incrementAndGet()
         }.onFailure { dropped.incrementAndGet() }
     }
 

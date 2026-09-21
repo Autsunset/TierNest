@@ -6,7 +6,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import com.tiernest.app.diagnostics.AppDiagnostics
 import com.tiernest.app.diagnostics.LogEvent
@@ -16,6 +15,7 @@ data class EngineStatus(val alive: Boolean = false, val cidr: String = "", val r
 
 /** The reply frame was fully consumed; the Root session is still usable. */
 internal class RootOperationException(message: String) : IllegalStateException(message)
+internal class RootSessionCleanupException : java.io.IOException("Root session did not terminate")
 
 /** Only a fixed action crosses the su pipe. Configuration is never interpolated. */
 class RootEngine(private val context: Context, private val diagnostics: AppDiagnostics) {
@@ -41,6 +41,7 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
         withContext(Dispatchers.IO) {
             val ephemeral = session == null
             var success = false
+            var failure: Throwable? = null
             try {
                 if (session == null) {
                     prepare()
@@ -54,9 +55,17 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
                 // A completed read-only check must not tear down a live core.
                 // I/O, framing errors and cancellation still close the session.
                 success = preserveOnOperationFailure
+                failure = error
+                throw error
+            } catch (error: Throwable) {
+                failure = error
                 throw error
             } finally {
-                if (!success || (ephemeral && !retain)) closeLocked()
+                if (!success || (ephemeral && !retain)) {
+                    try { closeLocked() } catch (cleanup: Exception) {
+                        if (failure != null) failure.addSuppressed(cleanup) else throw cleanup
+                    }
+                }
             }
         }
     }
@@ -183,43 +192,14 @@ private class RootSession(stage: File, private val diagnostics: AppDiagnostics) 
         return next.getOrNull()
     }
 
-    suspend fun awaitReady() = withRootDeadline(30_000) {
-        val message = StringBuilder()
-        while (true) {
-            val line = readLine() ?: error("Root 启动失败：${message.take(600)}")
-            if (line == "__TN_READY__") break
-            if (message.length < 600) message.appendLine(line)
-        }
-    }
+    private val transport = RootCommandTransport(input, ::readLine, { process.isAlive },
+        android.os.SystemClock::elapsedRealtime, { action, error, code, timing ->
+            diagnostics.event(if (error == null) LogEvent.ROOT_COMMAND_DONE else LogEvent.ROOT_COMMAND_FAILED,
+                error, action = action, elapsedMs = timing.awakeMs, code = code, root = timing)
+        })
 
-    suspend fun call(action: String): String {
-        require(action in setOf("start", "stop", "status", "sync", "peers", "backup", "import", "validate", "gateway", "probe"))
-        val started = System.nanoTime()
-        return try {
-            withRootDeadline(25_000) {
-                val token = UUID.randomUUID().toString().replace("-", "")
-                withContext(Dispatchers.IO) { input.write("$token $action\n"); input.flush() }
-                val result = StringBuilder()
-                while (true) {
-                    val line = readLine() ?: error("Root 会话已退出；连接已终止")
-                    if (line.startsWith("__TN_DONE_$token:")) {
-                        val code = line.substringAfter(':').toIntOrNull() ?: error("Root 响应格式无效")
-                        if (action !in setOf("status", "peers", "sync") || code != 0) diagnostics.event(
-                            LogEvent.ROOT_COMMAND_DONE, action = action, elapsedMs = (System.nanoTime() - started) / 1_000_000, code = code)
-                        if (code != 0) throw RootOperationException("Root 操作失败 ($action)：${result.toString().trim().take(600)}")
-                        break
-                    }
-                    check(result.length < 2 * 1024 * 1024) { "核心响应过大" }
-                    result.appendLine(line)
-                }
-                result.toString().trim()
-            }
-        } catch (error: Exception) {
-            if (error !is CancellationException) diagnostics.event(LogEvent.ROOT_COMMAND_FAILED, error,
-                action = action, elapsedMs = (System.nanoTime() - started) / 1_000_000)
-            throw error
-        }
-    }
+    suspend fun awaitReady() = transport.awaitReady()
+    suspend fun call(action: String) = transport.call(action)
 
     suspend fun close() = withContext(Dispatchers.IO) {
         try {
@@ -228,7 +208,7 @@ private class RootSession(stage: File, private val diagnostics: AppDiagnostics) 
                 process.destroy()
                 if (!process.waitFor(3, TimeUnit.SECONDS)) {
                     process.destroyForcibly()
-                    process.waitFor(2, TimeUnit.SECONDS)
+                    if (!process.waitFor(2, TimeUnit.SECONDS)) throw RootSessionCleanupException()
                 }
             }
         } finally {

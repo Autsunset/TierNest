@@ -10,6 +10,7 @@ import com.tiernest.app.*
 import com.tiernest.app.data.*
 import com.tiernest.app.engine.EngineStatus
 import com.tiernest.app.engine.VpnEngine
+import com.tiernest.app.engine.RootCommandTimeoutException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
@@ -42,6 +43,9 @@ class ConnectionService : VpnService() {
     private var coreStartedAt = 0L
     private var stopReason = ""
     private var loggedPhase: DesiredConnection? = null
+    private val recovery = RootRecoveryPolicy()
+    private var requestRevision = 0L
+    private var operationDesired: DesiredConnection? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { events.trySend(Unit) }
@@ -82,25 +86,10 @@ class ConnectionService : VpnService() {
             try {
                 for (ignored in events) {
                     delay(400) // Merge bursts of address, network and VPN callbacks.
-                    try { operations.withLock { reconcile() } }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) {
-                        app.diagnostics.event(LogEvent.CONNECTION_FAILED, error, mode = runningMode?.name)
-                        val cleanupError = runCatching { stopBackend() }.exceptionOrNull()
-                        coreActive = false
-                        val message = (error.message ?: "连接失败，请重新连接") +
-                            if (cleanupError != null) "；清理状态未确认，请重新打开 App 检查" else ""
-                        app.store.update { it.copy(requested = false, lastConnectionError = message) }
-                        app.dashboard.update { it.copy(phase = "连接失败", busy = false, active = false,
-                            detail = "请检查下方错误后重试", cidr = "", table = "", priority = "", routeCount = 0,
-                            error = message,
-                            peers = emptyList(), rxRate = 0f, txRate = 0f) }
-                        // No indefinite retry loop after a core/route/root failure.
-                        finishService()
-                    }
+                    operations.withLock { attempt { reconcile() } }
                 }
             } finally {
-                withContext(NonCancellable) { runCatching { stopBackend() } }
+                withContext(NonCancellable) { operations.withLock { runCatching { stopBackend() } } }
             }
         }
         scope.launch {
@@ -109,7 +98,9 @@ class ConnectionService : VpnService() {
                     if (coreActive && !app.dashboard.value.busy) runCatching { operations.withLock {
                         // Finish the bounded in-flight pipe exchange before pausing
                         // sampling; cancellation must not leave a partial RPC reply.
-                        if (coreActive && app.store.load().requested) withContext(NonCancellable) { sample() }
+                        if (coreActive && app.store.load().requested) withContext(NonCancellable) {
+                            attempt { sample() }
+                        }
                     } }
                         .onFailure { if (it !is CancellationException) events.trySend(Unit) }
                     delay(3000)
@@ -126,6 +117,7 @@ class ConnectionService : VpnService() {
             STOP -> {
                 app.diagnostics.event(LogEvent.STOP_REQUEST, mode = app.store.load().connectionMode.name)
                 stopReason = ""
+                requestRevision++
                 app.store.update { it.copy(requested = false, lastConnectionError = "") }
             }
         }
@@ -135,6 +127,60 @@ class ConnectionService : VpnService() {
         // Recover a system-killed foreground service; explicit stop and core
         // failures persist requested=false and call stopSelf, so never loop.
         return START_STICKY
+    }
+
+    /** Both callers hold operations for the exchange AND its cleanup/recovery.
+     * Otherwise UI sampling can run while an old session is being torn down. */
+    private suspend fun attempt(block: suspend () -> Unit) {
+        val revision = requestRevision
+        operationDesired = null
+        try { block() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { handleFailure(error, revision) }
+    }
+
+    private suspend fun handleFailure(error: Exception, revision: Long) {
+        val failedMode = runningMode
+        coreActive = false
+        lastSample = null
+        maintenance?.cancel()
+        app.diagnostics.event(LogEvent.CONNECTION_FAILED, error, mode = failedMode?.name)
+        val cleanupError = runCatching { stopBackend() }.exceptionOrNull()
+        // RootEngine closes a poisoned pipe before propagating the original
+        // error. Its suppressed cleanup errors must also prevent a retry.
+        val cleanupSucceeded = cleanupError == null &&
+            generateSequence<Throwable>(error) { it.cause }.take(8).all { it.suppressed.isEmpty() }
+        val latest = app.store.load()
+        val standby = ConnectionPolicy.decide(latest.requested, latest.screenSuspend && screenRegistered,
+            getSystemService(PowerManager::class.java).isInteractive,
+            ModePolicy.automatic(latest.connectionMode, latest.automatic), false, eventHealthy) != DesiredConnection.CONNECTED ||
+            (operationDesired == DesiredConnection.HOME_STANDBY &&
+                ModePolicy.automatic(latest.connectionMode, latest.automatic) && eventHealthy)
+        val decision = recovery.decide(latest.requested, latest.connectionMode, failedMode,
+            revision != requestRevision, error is RootCommandTimeoutException, cleanupSucceeded, standby)
+        app.diagnostics.event(LogEvent.ROOT_RECOVERY, mode = failedMode?.name, recovery = decision)
+        val cleanupWarning = if (!cleanupSucceeded) "；清理状态未确认，请重新打开 App 检查" else ""
+        when (decision) {
+            RecoveryDecision.STOPPED -> {
+                app.dashboard.value = Dashboard(error = stopReason + cleanupWarning)
+                finishService()
+            }
+            RecoveryDecision.RECONCILE, RecoveryDecision.RETRY -> {
+                app.dashboard.value = Dashboard(phase = "正在恢复连接", busy = true,
+                    detail = if (decision == RecoveryDecision.RETRY) "Root 通信超时，正在尝试一次重连" else "正在应用最新运行设置")
+                notifyState("正在恢复连接")
+                // A single, non-waking delay. Keep the operation lock so network
+                // callbacks cannot bypass the backoff; manual stop persists now.
+                if (decision == RecoveryDecision.RETRY) delay(1500)
+                events.trySend(Unit) // Re-read stop/mode/screen/home before starting.
+            }
+            RecoveryDecision.FAILED -> {
+                val message = (error.message ?: "连接失败，请重新连接") + cleanupWarning
+                app.store.update { it.copy(requested = false, lastConnectionError = message) }
+                app.dashboard.value = Dashboard(phase = "连接失败", detail = "请检查下方错误后重试", error = message)
+                finishService()
+            }
+        }
     }
 
     private suspend fun reconcile() {
@@ -147,6 +193,7 @@ class ConnectionService : VpnService() {
             try { home = detector.check(prefs) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
+                if (error is RootCommandTimeoutException && coreActive && runningMode == ConnectionMode.ROOT) throw error
                 warning = "家庭网络检测失败，保持核心运行：${error.message.orEmpty().take(200)}"
                 // A transport/protocol failure may have closed the Root session.
                 // Recreate it below instead of assuming the old core survived.
@@ -157,6 +204,8 @@ class ConnectionService : VpnService() {
         } else detector.reset()
         val desired = ConnectionPolicy.decide(app.store.load().requested, prefs.screenSuspend && screenRegistered,
             getSystemService(PowerManager::class.java).isInteractive, automatic, home, eventHealthy)
+        operationDesired = desired
+        recovery.reconcile(desired)
         if (desired != loggedPhase) {
             when (desired) {
                 DesiredConnection.HOME_STANDBY -> app.diagnostics.event(LogEvent.HOME_STANDBY)
@@ -194,7 +243,16 @@ class ConnectionService : VpnService() {
                 app.dashboard.update { it.copy(phase = "正在连接", detail = "启动核心并等待虚拟地址", busy = true, error = "") }
                 notifyState("正在连接")
                 val configuration = withContext(Dispatchers.IO) { app.store.readConfig() }
+                val latest = app.store.load()
+                val latestDesired = ConnectionPolicy.decide(latest.requested, latest.screenSuspend && screenRegistered,
+                    getSystemService(PowerManager::class.java).isInteractive,
+                    ModePolicy.automatic(latest.connectionMode, latest.automatic), home, eventHealthy)
+                recovery.reconcile(latestDesired)
+                if (latestDesired != DesiredConnection.CONNECTED || latest.connectionMode != prefs.connectionMode) {
+                    events.trySend(Unit); return
+                }
                 runningMode = prefs.connectionMode
+                recovery.starting(prefs.connectionMode)
                 app.diagnostics.event(LogEvent.CORE_START, mode = runningMode?.name)
                 if (runningMode == ConnectionMode.VPN) vpnEngine.start(configuration, owner)
                 else app.engine.start(configuration, owner)
@@ -215,6 +273,7 @@ class ConnectionService : VpnService() {
                 app.diagnostics.event(LogEvent.CORE_READY, mode = runningMode?.name)
             }
             sample(syncRoutes = true)
+            runningMode?.let(recovery::connected)
             app.dashboard.update { it.copy(phase = "核心运行", detail = if (runningMode == ConnectionMode.VPN)
                 "系统 VPN 组网 · 无需 Root" else "Root 组网 · 可与系统 VPN 共存", busy = false, error = warning) }
             notifyState("核心运行")
@@ -261,6 +320,8 @@ class ConnectionService : VpnService() {
 
     private suspend fun backendStatus() = if (runningMode == ConnectionMode.VPN) vpnEngine.status() else app.engine.status()
     private suspend fun stopBackend() {
+        coreActive = false
+        lastSample = null
         if (runningMode != null) app.diagnostics.event(LogEvent.CORE_STOP, mode = runningMode?.name)
         when (runningMode) {
             ConnectionMode.VPN -> vpnEngine.stop(owner)
@@ -350,7 +411,7 @@ class ConnectionService : VpnService() {
             }
             // Persist stop before waiting for any running root command or callback.
             app.store.update { it.copy(requested = connect, lastConnectionError = if (connect) "" else stopMessage) }
-            activeService?.let { it.stopReason = stopMessage; it.events.trySend(Unit); return }
+            activeService?.let { it.requestRevision++; it.stopReason = stopMessage; it.events.trySend(Unit); return }
             if (!connect) { pendingStart = null; app.dashboard.value = Dashboard(error = stopMessage); return }
             if (pendingStart != null) return
             val ticket = Any()
@@ -387,7 +448,7 @@ class ConnectionService : VpnService() {
         fun reconnect(context: Context) {
             val app = context.applicationContext as TierNestApp
             if (!app.store.load().requested) return // A manual stop during save always wins.
-            activeService?.let { it.pendingReconnect = true; it.events.trySend(Unit); return }
+            activeService?.let { it.requestRevision++; it.pendingReconnect = true; it.events.trySend(Unit); return }
             settingsChanged(context)
         }
     }
