@@ -51,4 +51,45 @@ class ConfigCodecTest {
         val after = ConfigCodec.parse(ConfigCodec.effective(text))
         for (key in listOf("time", "date", "infinity")) assertEquals(before[key], after[key])
     }
+
+    @Test fun bareIpv4AndInlineSubnetsParseCorrectly() {
+        val inlineToml = """
+            instance_name = "tiernest"
+            dhcp = false
+            ipv4 = "10.77.0.2"
+            proxy_network = [{ cidr = "192.168.1.0/24" }, { cidr = "10.88.0.0/16" }]
+            [network_identity]
+            network_name = "synthetic-mesh"
+            network_secret = "synthetic-secret"
+        """.trimIndent() + "\n"
+        val form = ConfigCodec.form(inlineToml)
+        assertEquals("10.77.0.2", form.ipv4)
+        assertFalse(form.dhcp)
+        assertEquals("192.168.1.0/24\n10.88.0.0/16", form.subnets)
+        val effective = ConfigCodec.effective(inlineToml)
+        val parsed = ConfigCodec.parse(effective)
+        assertEquals("10.77.0.2", parsed["ipv4"])
+        assertEquals(false, parsed["dhcp"])
+        val proxies = parsed["proxy_network"] as? List<*>
+        assertNotNull(proxies)
+        assertEquals(2, proxies!!.size)
+    }
+
+    @Test fun unusableVirtualAddressIsRejectedBeforeStartingEitherBackend() {
+        for (mode in ConnectionMode.entries) for (address in listOf("0.0.0.0/0", "127.0.0.1/32", "169.254.1.1/16", "224.0.0.1/8", "10.0.0.1/7")) {
+            val text = "ipv4 = \"$address\"\ndhcp = false\n[network_identity]\nnetwork_name = \"fixture\"\nnetwork_secret = \"fixture-secret\"\n"
+            val error = runCatching { ConfigCodec.effective(text, mode) }.exceptionOrNull()
+            assertTrue(error is IllegalArgumentException)
+            assertTrue(error!!.message!!.contains("虚拟 IPv4"))
+        }
+    }
+
+    @Test fun vpnMtuCannotSilentlyDifferBetweenNativeCoreAndAndroidInterface() {
+        val text = "dhcp = true\n[network_identity]\nnetwork_name = \"fixture\"\nnetwork_secret = \"fixture-secret\"\n[flags]\nmtu = 12000\n"
+        assertEquals("12000", ConfigCodec.form(ConfigCodec.effective(text, ConnectionMode.ROOT)).mtu)
+        val error = runCatching { ConfigCodec.effective(text, ConnectionMode.VPN) }.exceptionOrNull()
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(error!!.message!!.contains("MTU"))
+        assertEquals("9000", ConfigCodec.form(ConfigCodec.effective(text.replace("12000", "9000"), ConnectionMode.VPN)).mtu)
+    }
 }

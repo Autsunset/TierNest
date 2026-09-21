@@ -44,4 +44,5 @@ __pycache__/
 *.aab
 *.keystore
 *.jks
+*signing*.properties
 /native/vpn/target/

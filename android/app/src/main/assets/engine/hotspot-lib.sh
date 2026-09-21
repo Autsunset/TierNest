@@ -59,9 +59,20 @@ cleanup_hotspot() (
             set -f; set -- $hs_line
             hs_table=$1; hs_chain=$2; shift 2
             case "$hs_table:$hs_chain" in filter:FORWARD|filter:TNAPP_HSF|nat:POSTROUTING|nat:TNAPP_HSN) ;; *) hs_failed=1; continue;; esac
-            if hs_iptables "$hs_table" -C "$hs_chain" "$@" 2>/dev/null; then
-                hs_iptables "$hs_table" -D "$hs_chain" "$@" || hs_failed=1
+            # Fast path: one full-identity delete per journal rule, no pre-check.
+            if hs_iptables "$hs_table" -D "$hs_chain" "$@" 2>/dev/null; then continue; fi
+            hs_rc=0
+            hs_iptables "$hs_table" -C "$hs_chain" "$@" 2>/dev/null || hs_rc=$?
+            if [ "$hs_rc" -eq 0 ]; then
+                hs_failed=1; continue  # Still present; the delete failed for a real reason.
             fi
+            if [ "$hs_rc" -ne 1 ]; then
+                hs_failed=1; continue  # Lock/permission-style query error, not confirmed absence.
+            fi
+            # Exit 1 is the confirmed-absence code. The builtin chains of a table
+            # always exist; only a readable table may attest that absence.
+            case "$hs_table" in filter) hs_probe=FORWARD;; *) hs_probe=POSTROUTING;; esac
+            hs_iptables "$hs_table" -S "$hs_probe" >/dev/null 2>&1 || hs_failed=1
         done < "$TN_RUN/hotspot.undo"
     fi
     if [ -f "$TN_RUN/hotspot.return" ]; then

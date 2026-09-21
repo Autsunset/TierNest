@@ -38,8 +38,16 @@ class AppStore(context: Context) {
     @Synchronized fun readConfig(): String = if (config.baseFile.exists()) config.openRead().bufferedReader().use { it.readText() } else ConfigCodec.template
 
     @Synchronized fun writeConfig(text: String) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
         val output = config.startWrite()
-        try { output.write(text.toByteArray()); config.finishWrite(output) }
+        try {
+            output.write(bytes)
+            // AtomicFile logs some sync/rename failures instead of throwing.
+            // Surface a failed durable write before reporting a successful save.
+            output.fd.sync()
+            config.finishWrite(output)
+            check(config.openRead().use { bytes.contentEquals(it.readBytes()) }) { "配置写入校验失败，未确认保存成功" }
+        }
         catch (error: Throwable) { config.failWrite(output); throw error }
     }
 

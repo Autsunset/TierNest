@@ -41,9 +41,7 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
                                     block: suspend (RootSession) -> T): T = mutex.withLock {
         withContext(Dispatchers.IO) {
             val ephemeral = session == null
-            var success = false
-            var failure: Throwable? = null
-            try {
+            withRootCommandLifetime(ephemeral, retain, preserveOnOperationFailure, ::closeLocked) {
                 if (session == null) {
                     prepare()
                     session = try { RootSession(stage, diagnostics) } catch (error: java.io.IOException) {
@@ -51,22 +49,7 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
                     }
                     session!!.awaitReady()
                 }
-                block(session!!).also { success = true }
-            } catch (error: RootOperationException) {
-                // A completed read-only check must not tear down a live core.
-                // I/O, framing errors and cancellation still close the session.
-                success = preserveOnOperationFailure
-                failure = error
-                throw error
-            } catch (error: Throwable) {
-                failure = error
-                throw error
-            } finally {
-                if (!success || (ephemeral && !retain)) {
-                    try { closeLocked() } catch (cleanup: Exception) {
-                        if (failure != null) failure.addSuppressed(cleanup) else throw cleanup
-                    }
-                }
+                block(session!!)
             }
         }
     }
@@ -126,13 +109,19 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
         callLocked(current, "sync")
     }
 
-    suspend fun validate(config: String) = command {
-        File(stage, "effective.toml").writeText(ConfigCodec.effective(config,
-            defaultHostname = com.tiernest.app.data.DeviceName.current(context)))
-        it.call("validate")
+    suspend fun validate(config: String): String {
+        // Reject invalid local input before entering an existing Root session's
+        // lifecycle; a malformed draft cannot interrupt the connected core.
+        val effective = withContext(Dispatchers.IO) {
+            ConfigCodec.effective(config, defaultHostname = com.tiernest.app.data.DeviceName.current(context))
+        }
+        return command(preserveOnOperationFailure = true) {
+            File(stage, "effective.toml").writeText(effective)
+            it.call("validate")
+        }
     }
 
-    suspend fun backup(config: String): String = command {
+    suspend fun backup(config: String): String = command(preserveOnOperationFailure = true) {
         File(stage, "backup.toml").writeText(config)
         try { it.call("backup").trim() } finally { File(stage, "backup.toml").delete() }
     }

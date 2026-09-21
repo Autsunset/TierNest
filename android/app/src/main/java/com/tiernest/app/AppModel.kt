@@ -41,6 +41,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var selectedPage = 0
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("")
+    val storagePermissionNeeded = MutableStateFlow(false)
+    private var pendingStorageTask: (suspend () -> Unit)? = null
     private val writes = Mutex()
     private val preferenceWrites = Mutex()
     private var preferenceRevision = 0L
@@ -113,12 +115,33 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try { withContext(Dispatchers.IO) { writes.withLock { block() } } }
             catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: BackupPermissionRequiredException) {
+                // The backup is a prerequisite: no configuration write has
+                // happened. Keep this user action until Android answers.
+                pendingStorageTask = block
+                storagePermissionNeeded.value = true
+            }
             catch (error: Exception) {
                 app.diagnostics.event(com.tiernest.app.diagnostics.LogEvent.OPERATION_FAILED, error)
                 message.value = error.message ?: "操作失败"
             }
-            finally { busy.value = false }
+            finally { busy.value = pendingStorageTask != null }
         }
+    }
+
+    fun consumeStoragePermissionRequest(): Boolean {
+        if (!storagePermissionNeeded.value || pendingStorageTask == null) return false
+        storagePermissionNeeded.value = false
+        return true
+    }
+
+    fun onStoragePermissionResult(granted: Boolean) {
+        val action = pendingStorageTask ?: return
+        pendingStorageTask = null
+        storagePermissionNeeded.value = false
+        busy.value = false
+        if (granted) task(action)
+        else message.value = "未允许文件访问，未创建备份，原配置保留；可在系统设置授权后重试"
     }
 
     fun editForm(change: (NetworkForm) -> NetworkForm) { editor.update { it.edit(change) }; editorError.value = "" }
@@ -204,15 +227,35 @@ class AppModel(application: Application) : AndroidViewModel(application) {
             if (hasArgs) append("原模块使用 command_args：参数原文已保留，请先在配置页手动转换成等效 TOML，再确认。\n")
             append("请先在原模块中停止服务，再到 Root 管理器停用模块。确认后只改变 App 的运行选择，备份原件保留。")
         }
-        app.store.writeConfig(text)
-        prefs.value = app.store.update { it.copy(requested = false,
+        // A tile can issue a new request while the snapshot is being copied.
+        // Reassert stop through the service before committing imported state.
+        withContext(Dispatchers.Main) { ConnectionService.request(app, false) }
+        val oldPrefs = app.store.load()
+        val importedPrefs = oldPrefs.copy(
+            requested = false,
             automatic = original("service-mode.state").trim() == "auto",
             detection = if (detection["mode"] == "event") DetectionMode.EVENT else DetectionMode.HTTP,
             interval = detection["interval"]?.toIntOrNull()?.takeIf { n -> n > 0 } ?: 30,
-            homes = LegacyImport.homes(original("home-network.conf")), migrationReview = review) }
-        config.value = text
-        editor.value = ConfigDraft.load(text)
-        message.value = "已导入并保持断开。备份：$backup；请在设置中检查迁移说明。"
+            homes = LegacyImport.homes(original("home-network.conf")),
+            migrationReview = review,
+        )
+        try {
+            ModuleImportCommit.commit(
+                oldConfig = old,
+                newConfig = text,
+                oldPrefs = oldPrefs,
+                newPrefs = importedPrefs,
+                writeConfig = app.store::writeConfig,
+                writePrefs = app.store::update,
+            )
+            prefs.value = app.store.load()
+            config.value = text
+            editor.value = ConfigDraft.load(text)
+            message.value = "已导入并保持断开。备份：$backup；请在设置中检查迁移说明。"
+        } catch (error: Throwable) {
+            prefs.value = app.store.load()
+            throw error
+        }
     }
 }
 

@@ -40,6 +40,11 @@ enum class PreferencePage(val title: String) {
     var migrationConfirm by remember { mutableStateOf(false) }
     var clearLogs by remember { mutableStateOf(false) }
     val exportDiagnostics = rememberDiagnosticsExport(model)
+    val homeError by model.homeError.collectAsStateWithLifecycle()
+    fun openUrl(url: String) {
+        try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        catch (_: Exception) { model.message.value = "无法打开浏览器，请检查系统浏览器应用" }
+    }
     BackHandler(active && page != PreferencePage.HOME) { model.preferencePage.value = PreferencePage.HOME }
     AnimatedContent(page, modifier = Modifier.fillMaxSize(), transitionSpec = {
         if (appearance.reduceMotion) (fadeIn(tween(AppMotion.FADE_MS)) togetherWith fadeOut(tween(AppMotion.FADE_MS))).using(null)
@@ -152,6 +157,7 @@ enum class PreferencePage(val title: String) {
                         Text("已记住的网络 · ${prefs.homes.size}", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                         TextButton(onClick = { learn = true }, enabled = !busy && prefs.connectionMode == ConnectionMode.ROOT) { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Text("添加网络") }
                     } }
+                    if (homeError.isNotBlank()) item { SettingsCard { SmallNote(homeError, error = true) } }
                     if (prefs.homes.isEmpty()) item { SettingsCard { SmallNote("连接能够代理组网的 Wi-Fi，再验证并记住它。支持保存多个网络。") } }
                     items(prefs.homes, key = { it.id }) { home -> SettingsCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -212,13 +218,13 @@ enum class PreferencePage(val title: String) {
                     item { SettingsCard {
                         Text("路由与兼容", fontWeight = FontWeight.SemiBold)
                         SmallNote("只接管组网 IPv4 目标。Root 模式让出 VPN 槽位，VPN 模式使用系统槽位；厂商网络策略仍可能影响连接。")
-                        SmallNote("当前不支持热点转发、出口节点和 IPv6 虚拟路由。升级保留原始配置；不兼容的旧设置需要明确选择。")
+                        SmallNote("Root 提供可选单向热点共享；当前不支持出口节点和 IPv6 虚拟路由。升级保留原始配置；不兼容的旧设置需要明确选择。")
                     } }
                     item { SettingsCard(padding = 4.dp) {
-                        PreferenceRow(Icons.Rounded.Code, "TierNest 源码", "源代码、版本与问题反馈 · LGPL-3.0") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Autsunset/TierNest"))) }
-                        PreferenceRow(Icons.Rounded.Code, "EasyTier", "上游源码 · LGPL-3.0") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/EasyTier/EasyTier/tree/v2.6.4"))) }
-                        PreferenceRow(Icons.Rounded.Palette, "视觉参考", "interstellar-proxy · MIT") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/zn0wii/interstellar-proxy"))) }
-                        PreferenceRow(Icons.Rounded.Palette, "澎湃组件", "Miuix 0.6.1 · Apache-2.0") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/compose-miuix-ui/miuix"))) }
+                        PreferenceRow(Icons.Rounded.Code, "TierNest 源码", "源代码、版本与问题反馈 · LGPL-3.0") { openUrl("https://github.com/Autsunset/TierNest") }
+                        PreferenceRow(Icons.Rounded.Code, "EasyTier", "上游源码 · LGPL-3.0") { openUrl("https://github.com/EasyTier/EasyTier/tree/v2.6.4") }
+                        PreferenceRow(Icons.Rounded.Palette, "视觉参考", "interstellar-proxy · MIT") { openUrl("https://github.com/zn0wii/interstellar-proxy") }
+                        PreferenceRow(Icons.Rounded.Palette, "澎湃组件", "Miuix 0.6.1 · Apache-2.0") { openUrl("https://github.com/compose-miuix-ui/miuix") }
                     } }
                 }
             }
@@ -232,7 +238,6 @@ enum class PreferencePage(val title: String) {
     if (learn) {
         var target by remember { mutableStateOf("") }
         var port by remember { mutableStateOf("80") }
-        val homeError by model.homeError.collectAsStateWithLifecycle()
         AlertDialog(onDismissRequest = { if (!busy) learn = false }, title = { Text("验证当前 Wi-Fi") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SmallNote("填写经当前路由器可访问的组网 HTTP 地址。")
@@ -251,7 +256,7 @@ enum class PreferencePage(val title: String) {
             remove = null
         }) { Text("移除") } }, dismissButton = { TextButton(onClick = { remove = null }) { Text("取消") } }) }
     if (migrationConfirm) AlertDialog(onDismissRequest = { migrationConfirm = false }, title = { Text("使用 App 运行方式？") },
-        text = { Text("确认已停用旧模块，并检查 TOML 与命令参数。App 使用独立目标路由，暂不启用热点转发；原文件和备份保留。此操作不会启动连接。") },
+        text = { Text("确认已停用旧模块，并检查 TOML 与命令参数。App 使用独立目标路由，Root 提供可选单向热点共享（迁移不会自动开启），仍不支持出口节点和 IPv6 虚拟路由；原文件和备份保留。此操作不会启动连接。") },
         confirmButton = { TextButton(onClick = { model.preference { it.copy(migrationReview = "") }; migrationConfirm = false }) { Text("确认选择") } },
         dismissButton = { TextButton(onClick = { migrationConfirm = false }) { Text("继续检查") } })
 }

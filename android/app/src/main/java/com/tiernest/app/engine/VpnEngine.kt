@@ -36,7 +36,7 @@ class VpnEngine(private val context: Context) {
             check(VpnService.prepare(context) == null) { "请先在 App 中授权 VPN 连接" }
             stopLocked()
             val effective = ConfigCodec.effective(config, ConnectionMode.VPN, DeviceName.current(context))
-            mtu = ConfigCodec.form(effective).mtu.toIntOrNull()?.coerceIn(576, 9000) ?: 1380
+            mtu = ConfigCodec.form(effective).mtu.toInt() // Validated together with the native configuration.
             NativeVpn.validate(effective)
             NativeVpn.start(effective)
             started = true; owner = nextOwner
@@ -58,8 +58,10 @@ class VpnEngine(private val context: Context) {
             check(started && snapshot.status.alive) { "VPN 内核未运行" }
             val address = snapshot.status.cidr
             check(RoutePlanner.cidr(address) != null) { "尚未取得 VPN 虚拟地址" }
-            val normalized = routes.distinct().sorted()
-            check(normalized.isNotEmpty() && normalized.all { RoutePlanner.cidr(it)?.let(RoutePlanner::safe) == true }) { "没有可用的 VPN IPv4 路由" }
+            check(routes.isNotEmpty() && routes.all { RoutePlanner.cidr(it)?.let(RoutePlanner::safe) == true }) { "没有可用的 VPN IPv4 路由" }
+            // Joining/leaving a peer within an already routed virtual subnet
+            // must not recreate the system VPN interface unnecessarily.
+            val normalized = RoutePlanner.minimalRoutes(routes)
             val signature = "$address|$mtu|${normalized.joinToString(",")}"
             if (signature == applied && descriptor != null) return@withContext
             check(VpnService.prepare(service) == null) { "VPN 授权已被撤销" }

@@ -167,6 +167,15 @@ object ConfigCodec {
         require(form.name.isNotBlank()) { "请先填写网络名称" }
         require(form.secret.isNotEmpty() || config.containsKey("credential")) { "请填写组网密钥" }
         require(form.dhcp || RoutePlanner.cidr(form.ipv4) != null) { "请启用 DHCP 或填写有效的虚拟 IPv4/CIDR" }
+        if (form.ipv4.isNotBlank()) {
+            require(RoutePlanner.cidr(form.ipv4)?.let(RoutePlanner::safe) == true) {
+                "虚拟 IPv4 不能使用回环、链路本地、多播、默认路由或小于 /8 的网段"
+            }
+        }
+        if (mode == ConnectionMode.VPN) {
+            val mtu = form.mtu.toIntOrNull()
+            require(mtu != null && mtu in 576..9000) { "VPN 模式的 MTU 请输入 576–9000；不能与系统接口使用不同值" }
+        }
         require((config["exit_nodes"] as? List<*>)?.isNotEmpty() != true) { "与 VPN 共存模式不支持出口节点；请先在配置中移除 exit_nodes" }
         require(!config.containsKey("ipv6")) { "首版仅管理 IPv4 虚拟路由；暂不支持 ipv6 字段" }
         val flags = (config["flags"] as? Map<String, Any>).orEmpty().toMutableMap()

@@ -94,6 +94,7 @@ s['calls'].append(['iptables', '-t', table] + a.copy())
 chains = s.setdefault('chains', {}).setdefault(table, {})
 def done(code=0):
     p.write_text(json.dumps(s)); sys.exit(code)
+if os.environ.get('FAIL_TABLE') == table: done(4)  # xtables lock/permission class
 op, name = a[0], a[1]
 args = a[2:]
 if op == '-I' and args and args[0] == '1': args = args[1:]
@@ -110,9 +111,14 @@ if op == '-N':
 if op in ('-A', '-I'):
     if os.environ.get('FAIL_IPT_APPEND') and os.environ['FAIL_IPT_APPEND'] in joined: done(1)
     chains.setdefault(name, []).append(args); done()
-if op == '-C': done(0 if args in chains.get(name, []) else 1)
+if op == '-C':
+    # A resource-class failure for one specific query.
+    if os.environ.get('FAIL_IPT_CHECK_FOR') and os.environ['FAIL_IPT_CHECK_FOR'] in joined: done(4)
+    done(0 if args in chains.get(name, []) else 1)
 if op == '-D':
     if os.environ.get('FAIL_IPT_DELETE'): done(1)
+    # A resource-class failure deleting one specific present rule.
+    if os.environ.get('FAIL_IPT_DELETE_FOR') and os.environ['FAIL_IPT_DELETE_FOR'] in joined: done(4)
     if name in chains and args in chains[name]:
         chains[name].remove(args); done()
     done(1)
@@ -174,8 +180,11 @@ class HotspotTest(unittest.TestCase):
                  f"TN_BACKUPS='{self.root}/backups'; . '{LIB}'; . '{HOTSPOT}'\n"
                  f"core_alive() {{ return {0 if alive else 1}; }}\n"
                  f"hs_forward_ready() {{ return {0 if forward else 1}; }}\n")
-        return subprocess.run(['sh', '-c', setup + script], env=dict(self.env, **(extra or {})),
-                              capture_output=True, text=True, timeout=15)
+        result = subprocess.run(['sh', '-c', setup + script], env=dict(self.env, **(extra or {})),
+                                capture_output=True, text=True, timeout=15)
+        if 'Traceback (most recent call last)' in result.stderr:
+            self.fail(f'mock crashed: {result.stderr[:600]}')
+        return result
 
     def enable(self, **kwargs):
         return self.run_shell('sync_hotspot', **kwargs)
@@ -232,6 +241,84 @@ class HotspotTest(unittest.TestCase):
             if call[0] == 'iptables':
                 self.assertNotIn(call[3], ('-A', '-I', '-N'), call)
         self.assertEqual(len(self.state()['chains']['nat']['TNAPP_HSN']), 2)
+
+    def test_off_cleanup_command_count_reduced(self):
+        self.assert_active(self.enable())
+        before = len(self.state()['calls'])
+        self.query('off')
+        self.assertEqual(self.enable().returncode, 0)
+        iptables_calls = [c for c in self.state()['calls'][before:] if c[0] == 'iptables']
+        # 2 targets => 4 target rules + 3 fixed rules + 3 parent hooks = 10
+        # journal rules, each removed with exactly one full-identity delete,
+        # plus one -S and one -X per owned chain. No -C pre-checks remain.
+        self.assertEqual(len(deletes := [c for c in iptables_calls if '-D' in c]), 10)
+        self.assertEqual(len(iptables_calls), 14)
+        self.assertFalse(any('-C' in c for c in iptables_calls))
+        self.assertEqual(len([c for c in iptables_calls if '-X' in c]), 2)
+
+    def test_absent_rule_is_not_a_cleanup_failure(self):
+        self.assert_active(self.enable())
+        # One hook was already removed (netd rebuild, earlier partial cleanup).
+        # Its absence must not fail cleanup while the table stays readable.
+        state = self.state()
+        state['chains']['filter']['FORWARD'].remove(['-i', 'tiernest0', '-o', 'ap0', '-j', 'TNAPP_HSF'])
+        self.write_state(state)
+        result = self.run_shell('cleanup_hotspot')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_baseline_chains(self.state()['chains'])
+        for name in ['hotspot.rules', 'hotspot.return', 'hotspot.chains']:
+            self.assertFalse((self.root / 'run' / name).exists(), name)
+
+    def test_real_delete_failure_keeps_journal(self):
+        self.assert_active(self.enable())
+        result = self.run_shell('cleanup_hotspot', extra={'FAIL_IPT_DELETE_FOR': 'ESTABLISHED,RELATED'})
+        self.assertEqual(result.returncode, 1)
+        state = self.state()
+        # The still-present undeletable rule survives with the journal...
+        self.assertEqual(state['chains']['filter']['TNAPP_HSF'], [
+            ['-i', 'tiernest0', '-o', 'ap0', '-d', '192.168.77.0/24', '-m', 'conntrack',
+             '--ctstate', 'ESTABLISHED,RELATED', '-j', 'ACCEPT']])
+        # ...while every other journal rule was still removed by full identity.
+        self.assertEqual(state['chains']['filter']['FORWARD'], [])
+        self.assertNotIn('TNAPP_HSN', state['chains']['nat'])
+        self.assertEqual(state['chains']['nat']['POSTROUTING'], [])
+        for name in ['hotspot.rules', 'hotspot.return', 'hotspot.chains']:
+            self.assertTrue((self.root / 'run' / name).exists(), name)
+        self.assertIn('hotspot_state=error', (self.root / 'run/hotspot.status').read_text())
+        # A retry after the fault clears finishes the remainder idempotently.
+        self.assertEqual(self.run_shell('cleanup_hotspot').returncode, 0)
+        self.assert_baseline_chains(self.state()['chains'])
+        self.assertFalse((self.root / 'run/hotspot.rules').exists())
+
+    def test_absent_rule_with_failing_query_is_not_cleaned(self):
+        self.assert_active(self.enable())
+        # The reverse hook is genuinely absent, but its -C query fails with a
+        # resource-class error while the builtin -S probe still succeeds. Absence
+        # is NOT confirmed; cleanup must fail and keep the journal.
+        state = self.state()
+        state['chains']['filter']['FORWARD'].remove(['-i', 'tiernest0', '-o', 'ap0', '-j', 'TNAPP_HSF'])
+        self.write_state(state)
+        result = self.run_shell('cleanup_hotspot', extra={'FAIL_IPT_CHECK_FOR': '-i tiernest0 -o ap0 -j TNAPP_HSF'})
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue((self.root / 'run/hotspot.rules').exists())
+        self.assertTrue((self.root / 'run/hotspot.chains').exists())
+        self.assertIn('hotspot_state=error', (self.root / 'run/hotspot.status').read_text())
+        # Without the injected query fault the same absent hook cleans benignly.
+        result = self.run_shell('cleanup_hotspot')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / 'run/hotspot.rules').exists())
+
+    def test_unreadable_table_keeps_journal(self):
+        self.assert_active(self.enable())
+        result = self.run_shell('cleanup_hotspot', extra={'FAIL_TABLE': 'filter'})
+        self.assertEqual(result.returncode, 1)
+        state = self.state()
+        # Every filter mutation failed; rules and hooks stay with the journal.
+        self.assertIn(['-i', 'ap0', '-o', 'tiernest0', '-j', 'TNAPP_HSF'], state['chains']['filter']['FORWARD'])
+        self.assertEqual(len(state['chains']['filter']['TNAPP_HSF']), 5)  # 2 accepts + 3 fixed rules
+        for name in ['hotspot.rules', 'hotspot.return', 'hotspot.chains']:
+            self.assertTrue((self.root / 'run' / name).exists(), name)
+        self.assertIn('hotspot_state=error', (self.root / 'run/hotspot.status').read_text())
 
     def test_off_cleans_all_state(self):
         self.assert_active(self.enable())

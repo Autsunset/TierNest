@@ -39,5 +39,8 @@ import java.io.ByteArrayOutputStream
         text = { Text("当前有未保存的修改。导入后可先检查内容，已保存的配置不会改变。") },
         confirmButton = { TextButton(onClick = { model.importDraft(text); pending = null; latestImported() }) { Text("导入草稿") } },
         dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } }) }
-    return { picker.launch(arrayOf("*/*")) }
+    return {
+        try { picker.launch(arrayOf("*/*")) }
+        catch (_: Exception) { model.message.value = "系统文件选择器不可用，可在TOML页粘贴配置" }
+    }
 }

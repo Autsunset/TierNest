@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK && model.prefs.value.connectionMode == ConnectionMode.VPN) model.startConnection()
         else model.message.value = "未授权 VPN，保持未连接"
     }
+    private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        model.onStoragePermissionResult(granted)
+    }
     private fun requestConnection() {
         if (model.prefs.value.requested) { model.connect(); return }
         if (!model.canConnect()) return
@@ -52,6 +55,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val prefs by model.prefs.collectAsStateWithLifecycle()
+            val storagePermissionNeeded by model.storagePermissionNeeded.collectAsStateWithLifecycle()
+            LaunchedEffect(storagePermissionNeeded) {
+                if (storagePermissionNeeded && model.consumeStoragePermissionRequest()) {
+                    try { storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                    catch (_: Exception) { model.onStoragePermissionResult(false) }
+                }
+            }
             val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = model.selectedPage) { 4 }
             val dark = when (prefs.colors) { ColorMode.SYSTEM -> isSystemInDarkTheme(); ColorMode.DARK -> true; ColorMode.LIGHT -> false }
             SideEffect {

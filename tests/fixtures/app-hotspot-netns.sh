@@ -2,6 +2,8 @@
 # Invoked only inside the runner's disposable network namespace.
 set -eu
 DIR=$1
+TARGETS=${2:-1}
+case "$TARGETS" in 1|128) ;; *) exit 1;; esac
 TN_ROOT=$DIR/root
 TN_RUN=$TN_ROOT/run
 TN_STAGE=$DIR/stage
@@ -68,6 +70,14 @@ iptables -t nat -A POSTROUTING -s 192.168.77.0/24 -o wlan0 -j MASQUERADE
 echo 1 > /proc/sys/net/ipv4/ip_forward # Only this disposable namespace.
 printf '20110 9980\n' > "$TN_RUN/lease"
 printf '10.77.0.0/24\n' > "$TN_RUN/routes"
+if [ "$TARGETS" = 128 ]; then
+    count=10
+    while [ "$count" -le 136 ]; do
+        ip -4 route add table 20110 "10.77.0.$count/32" dev tiernest0 proto 186 src 10.77.0.2
+        printf '10.77.0.%s/32\n' "$count" >> "$TN_RUN/routes"
+        count=$((count+1))
+    done
+fi
 : > "$TN_STAGE/hotspot-proxies"
 printf 'Tether state:\n  ap0 - TetheredState - lastError = 0\n  Upstream wanted: true\n' > "$DIR/tether-state"
 snapshot() {
@@ -95,7 +105,11 @@ snapshot > "$DIR/again"
 cmp "$DIR/active" "$DIR/again"
 echo 'PASS: repeated maintenance does not duplicate or rebuild rules'
 echo off > "$TN_STAGE/hotspot-query"
+cleanup_started=$(cut -d ' ' -f 1 /proc/uptime)
 sync_hotspot >/dev/null
+cleanup_finished=$(cut -d ' ' -f 1 /proc/uptime)
+awk -v start="$cleanup_started" -v end="$cleanup_finished" -v targets="$TARGETS" \
+    'BEGIN {printf "MEASURE: targets=%d cleanup_seconds=%.2f\n", targets, end-start}'
 snapshot > "$DIR/after"
 cmp "$DIR/before" "$DIR/after"
 if client_ping 10.77.0.9; then echo 'Access survived disable'; exit 1; fi

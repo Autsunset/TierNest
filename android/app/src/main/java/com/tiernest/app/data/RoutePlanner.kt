@@ -31,6 +31,17 @@ object RoutePlanner {
             !value.overlaps(Ipv4Cidr(0xa9fe0000, 16))
     }
 
+    /** Keep exactly the same address coverage while dropping routes already
+     * covered by a broader route. Never merge adjacent ranges into new space. */
+    fun minimalRoutes(routes: List<String>): List<String> {
+        val kept = mutableListOf<Ipv4Cidr>()
+        routes.map { requireNotNull(cidr(it)) { "无效 IPv4 路由" } }.distinct()
+            .sortedWith(compareBy<Ipv4Cidr> { it.prefix }.thenBy { it.network }).forEach { candidate ->
+                if (kept.none { it.prefix <= candidate.prefix && it.overlaps(candidate) }) kept.add(candidate)
+            }
+        return kept.map { it.toString() }.sorted()
+    }
+
     fun plan(local: String, peers: List<Peer>, physicalNetworks: List<String>): RoutePlan {
         val physical = physicalNetworks.mapNotNull(::cidr)
         val candidates = listOf(local) + peers.flatMap { listOf(it.ipv4) + it.subnets }

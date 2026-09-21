@@ -1,6 +1,6 @@
 # TierNest Android App
 
-**0.2.0-alpha10** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
+**0.2.0-rc01 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
@@ -48,6 +48,10 @@ VPN 模式首次弹出 Android 授权；Root 模式由 Root 管理器授权 **Ap
 
 使用 Root 模式前，先在原 TierNest/EasyTier WebUI 停止服务，再在 Root 管理器停用
 旧模块，避免重复内核和路由。停用模块本身不会终止已经运行的进程。
+
+Android 8/9 在创建 Download 备份或保存需要备份的修改时，会按需请求文件访问
+权限；允许后继续原操作，拒绝时保留原配置与草稿。模块导入会先写入审阅保护与
+停止状态，再提交 TOML；提交失败主动回滚，无法确认恢复时继续阻止未审阅的配置运行。
 
 ## 后台中断与重连
 
@@ -161,22 +165,29 @@ clang/libclang、C/C++ 工具链、curl、unzip、Python 3。先设置 `ANDROID_
 rustup toolchain install 1.95.0 --profile minimal
 rustup target add --toolchain 1.95.0 aarch64-linux-android x86_64-linux-android
 sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
-./scripts/build-android.sh
+./scripts/build-android.sh --ci
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-输出 `dist/TierNest-App-v0.2.0-alpha10.apk`。上游下载、Cargo 依赖、工具版本和
+CI 模式输出 `dist/TierNest-CI-v0.2.0-rc01-ci.apk`；维护者发布模式输出
+`dist/TierNest-App-v0.2.0-rc01.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
-这是 Release 优化的 **alpha 测试签名包**，保持早期测试包的覆盖升级能力。
-签名密钥不进入仓库。自行构建/CI 的签名不同，改装前先导出配置；不应直接覆盖
-来自不同签名的安装。GitHub Actions 构建产物用于代码验证，不替代维护者发布包。
+候选包采用 Release 优化且不可调试。维护者包保留已发布 APK 的签名身份，私钥现由
+仓库外的独立发布密钥库保管，保持覆盖升级；历史证书名称不作更换。CI 不接触发布
+私钥，使用独立签名、`com.tiernest.app.ci` 包名和「TierNest CI」应用名，可与维护者
+包并存。CI 不替代维护者安装包。普通源码验证使用 `--ci`；发布构建缺少私有签名
+配置会拒绝生成可发布产物。具体步骤见 [发布流程](../docs/RELEASING.md)。
 
 构建脚本按版本和 APK SHA-256 保留 R8 映射，默认位于
 `${XDG_DATA_HOME:-$HOME/.local/share}/TierNest/symbols/`，可用 `TIERNEST_SYMBOLS_DIR`
 指定备份位置。导出的报告含 APK 校验值，用于匹配准确的映射；清理构建缓存不会删除它们。
 
 ## 验证范围
+
+正式版收敛计划与剩余验收见 [App 发布计划](../docs/APP_RELEASE_PLAN.md)。当前为候选版；
+不能用模拟器、短时连接或离线回归代替实体手机的 Root/热点/待机验收。
+
 
 参见 [方案与验证记录](PLAN.zh-CN.md) 及 [故障记录](../TierNest-故障与踩坑记录.md)。
 云手机可验证界面与 VPN 功能，不能替代 arm64 Root 授权、Clash 共存、真实移动网络、

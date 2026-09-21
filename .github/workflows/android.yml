@@ -42,12 +42,14 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           export LIBCLANG_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/lib"
-          bash scripts/build-android.sh
+          bash scripts/build-android.sh --ci
       - name: Upload CI test package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: TierNest-ci-test-apk
-          path: dist/*.apk
+          path: |
+            dist/TierNest-CI-*.apk
+            dist/TierNest-CI-*.verification.json
           if-no-files-found: error
       - name: Upload test reports
         if: always()

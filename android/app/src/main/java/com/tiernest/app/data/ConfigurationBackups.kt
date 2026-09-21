@@ -16,6 +16,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+class BackupPermissionRequiredException : IllegalStateException("需要文件访问权限才能创建 Download 备份")
+
 /** Scoped Download backups for VPN users. No su, shell or all-files permission. */
 class ConfigurationBackups(private val context: Context) {
     suspend fun create(text: String): String = withContext(Dispatchers.IO) {
@@ -40,18 +42,26 @@ class ConfigurationBackups(private val context: Context) {
                     if (it.moveToFirst()) actualName = it.getString(0)
                 }
                 "Download/TierNest/backups/$actualName"
-            } catch (error: Exception) { resolver.delete(uri, null, null); throw error }
+            } catch (error: Exception) {
+                try { resolver.delete(uri, null, null) } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
+                throw error
+            }
         } else {
-            check(ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-                "Android 8/9 需要存储权限：请在系统应用权限中允许文件访问，再创建 Download 备份"
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                throw BackupPermissionRequiredException()
             }
             @Suppress("DEPRECATION")
             val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TierNest/backups")
             check(directory.isDirectory || directory.mkdirs()) { "Download 目录不可写，原配置保留" }
             val file = File(directory, name)
             check(file.createNewFile()) { "备份文件已存在，未覆盖" }
-            file.writeBytes(bytes)
-            check(bytes.contentEquals(file.readBytes())) { "备份校验失败，原配置保留" }
+            try {
+                file.writeBytes(bytes)
+                check(bytes.contentEquals(file.readBytes())) { "备份校验失败，原配置保留" }
+            } catch (error: Exception) {
+                if (!file.delete()) error.addSuppressed(java.io.IOException("Incomplete backup could not be removed"))
+                throw error
+            }
             file.absolutePath
         }
     }
