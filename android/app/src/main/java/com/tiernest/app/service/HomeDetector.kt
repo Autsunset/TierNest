@@ -26,13 +26,20 @@ class HomeDetector(private val app: TierNestApp) {
         WifiLink(network, iface, gateway, source)
     }
 
-    fun physicalNetworks(): List<String> = cm.allNetworks.flatMap { network ->
+    fun physicalNetworks(): List<String> = (cm.allNetworks.flatMap { network ->
         val caps = cm.getNetworkCapabilities(network)
         if (caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true) {
             cm.getLinkProperties(network)?.linkAddresses.orEmpty().filter { it.address is Inet4Address }
                 .map { "${it.address.hostAddress}/${it.prefixLength}" }
         } else emptyList()
-    }
+    } + runCatching {
+        // Hotspot downstreams are often absent from ConnectivityManager's
+        // upstream Networks. They must still be excluded from overlay routes.
+        java.net.NetworkInterface.getNetworkInterfaces().toList().filter { iface ->
+            iface.isUp && iface.name.matches(Regex("(?:wlan[0-9]+|ap[0-9]+|ap_[A-Za-z0-9_-]+|apbr[A-Za-z0-9_-]*|swlan[0-9]+|softap[0-9]+|br_tether[A-Za-z0-9_-]*)"))
+        }.flatMap { iface -> iface.interfaceAddresses.filter { it.address is Inet4Address }
+            .map { "${it.address.hostAddress}/${it.networkPrefixLength}" } }
+    }.getOrDefault(emptyList())).distinct()
 
     fun physicalSignature(): String = cm.allNetworks.mapNotNull { network ->
         val caps = cm.getNetworkCapabilities(network)

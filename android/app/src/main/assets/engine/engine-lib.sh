@@ -165,6 +165,18 @@ check_modules() {
             fail 'Stop and disable the existing EasyTier/TierNest module before connecting'; return 1
         fi
     done
+    # Disabled modules may leave rules matching a future tiernest0. Refuse the
+    # conflict; their WebUI owns their cleanup, not this app's journal.
+    for tn_chain in TN_HS_FWD TN_HS_OUT_FWD; do
+        if iptables -w 2 -t filter -S "$tn_chain" >/dev/null 2>&1; then
+            fail 'Stop the old module in its WebUI to remove its hotspot rules'; return 1
+        fi
+    done
+    for tn_chain in TN_HS_NAT TN_HS_OUT_NAT; do
+        if iptables -w 2 -t nat -S "$tn_chain" >/dev/null 2>&1; then
+            fail 'Stop the old module in its WebUI to remove its hotspot rules'; return 1
+        fi
+    done
     # Disabling a module does not stop its current process. The interface check
     # below catches this too; never take ownership of an existing TUN.
 }
@@ -206,6 +218,7 @@ engine_status() {
         printf 'tx=%s\n' "$(cat /sys/class/net/tiernest0/statistics/tx_bytes 2>/dev/null)"
     fi
     if read_lease; then printf 'table=%s\npref=%s\n' "$tn_table" "$tn_pref"; fi
+    [ ! -f "$TN_RUN/hotspot.status" ] || cat "$TN_RUN/hotspot.status"
 }
 
 backup_file() {
@@ -266,9 +279,10 @@ snapshot_module() {
 dispatch() {
     case "$1" in
         start) start_core;;
-        stop) stop_core && cleanup_routes && cleanup_rpc;;
+        stop) cleanup_hotspot && stop_core && cleanup_routes && cleanup_rpc;;
         status) engine_status;;
         sync) sync_routes;;
+        hotspot) sync_hotspot;;
         peers) timeout 8 "$TN_ROOT/bin/easytier-cli" -p 127.0.0.1:15888 -o json route list 2>/dev/null;;
         backup) backup_file;;
         import) snapshot_module;;

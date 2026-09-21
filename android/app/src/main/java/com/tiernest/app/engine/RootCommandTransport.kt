@@ -32,7 +32,7 @@ internal class RootCommandTransport(
     }
 
     suspend fun call(action: String): String {
-        require(action in setOf("start", "stop", "status", "sync", "peers", "backup", "import", "validate", "gateway", "probe"))
+        require(action in setOf("start", "stop", "status", "sync", "peers", "backup", "import", "validate", "gateway", "probe", "hotspot"))
         val started = System.nanoTime()
         val realtimeStarted = realtimeMillis()
         fun elapsed() = (System.nanoTime() - started) / 1_000_000

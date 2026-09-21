@@ -4,6 +4,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
 [[ -d "$ANDROID_HOME/platforms/android-36" ]] || { echo 'Install Android SDK platform 36.' >&2; exit 1; }
 python3 "$ROOT/tests/test-app-root-engine.py"
+python3 "$ROOT/tests/test-app-hotspot.py"
 python3 "$ROOT/tests/test-apk-privacy.py"
 cd "$ROOT/android"
 ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease "$@"

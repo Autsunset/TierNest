@@ -11,7 +11,7 @@ enum class LogEvent {
     CONNECT_REQUEST, STOP_REQUEST, CORE_START, CORE_READY, CORE_STOP, CONNECTION_FAILED,
     HOME_STANDBY, SCREEN_STANDBY, NETWORK_CHANGED, VPN_REVOKED, ORPHANED_REQUEST,
     ROOT_SESSION_OPEN, ROOT_SESSION_CLOSE, ROOT_COMMAND_DONE, ROOT_COMMAND_FAILED,
-    ROOT_OUTPUT_FAILED, ROOT_RECOVERY, OPERATION_FAILED, SETTINGS_FAILED, EVENT_SOURCE_FAILED,
+    ROOT_OUTPUT_FAILED, ROOT_RECOVERY, HOTSPOT_STATE_CHANGED, OPERATION_FAILED, SETTINGS_FAILED, EVENT_SOURCE_FAILED,
     EXPORT, LOGGING_ENABLED, FATAL
 }
 
@@ -24,7 +24,7 @@ data class RootCommandTiming(val phase: RootCommandPhase, val awakeMs: Long, val
 /** No Throwable.message/toString, configuration, addresses or pipe contents.
  * Stack frames are enough to locate the failing code without echoing input. */
 object DiagnosticRecords {
-    private val actions = setOf("start", "stop", "status", "sync", "peers", "backup", "import", "validate", "gateway", "probe")
+    private val actions = setOf("start", "stop", "status", "sync", "peers", "backup", "import", "validate", "gateway", "probe", "hotspot")
     private val symbol = Regex("[A-Za-z0-9_.$<>-]{1,240}")
     private fun symbol(value: String) = value.takeIf { symbol.matches(it) } ?: "[symbol]"
 

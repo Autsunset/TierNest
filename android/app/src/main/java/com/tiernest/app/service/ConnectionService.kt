@@ -29,6 +29,7 @@ class ConnectionService : VpnService() {
     private lateinit var cm: ConnectivityManager
     private var registered = false
     private var screenRegistered = false
+    private var tetherRegistered = false
     private var eventHealthy = true
     private var signature = ""
     private var coreActive = false
@@ -56,6 +57,13 @@ class ConnectionService : VpnService() {
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { events.trySend(Unit) }
     }
+    // A cue only: the privileged command independently reads live tether state,
+    // so an intent never supplies an interface or a route to install.
+    private val tether = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (app.store.load().hotspotAccess) events.trySend(Unit)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -76,6 +84,11 @@ class ConnectionService : VpnService() {
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED).build(), callback)
             registered = true
         } catch (error: Exception) { eventHealthy = false; app.diagnostics.event(LogEvent.EVENT_SOURCE_FAILED, error) }
+        try {
+            ContextCompat.registerReceiver(this, tether, IntentFilter("android.net.conn.TETHER_STATE_CHANGED"),
+                ContextCompat.RECEIVER_EXPORTED)
+            tetherRegistered = true
+        } catch (error: Exception) { app.diagnostics.event(LogEvent.EVENT_SOURCE_FAILED, error) }
         try {
             ContextCompat.registerReceiver(this, screen, IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
@@ -300,6 +313,12 @@ class ConnectionService : VpnService() {
         if (syncRoutes) {
             check(plan.routes.isNotEmpty()) { "虚拟网段与物理网络冲突，或没有可用的 IPv4 路由" }
             if (runningMode == ConnectionMode.VPN) vpnEngine.sync(this, plan.routes) else app.engine.sync(plan.routes)
+            if (runningMode == ConnectionMode.ROOT) {
+                val latest = app.store.load()
+                if (latest.hotspotAccess || app.dashboard.value.hotspot != HotspotState.DISABLED) {
+                    app.engine.hotspot(latest.requested && latest.hotspotAccess)
+                }
+            }
         }
         val now = SystemClock.elapsedRealtime()
         val old = lastSample
@@ -309,13 +328,16 @@ class ConnectionService : VpnService() {
         val sampleVisible = app.uiVisible.value && app.uiDataVisible.value
         lastSample = if (sampleVisible) now to status else null
         val routing = if (syncRoutes) backendStatus() else status
+        if (routing.hotspot != app.dashboard.value.hotspot) {
+            app.diagnostics.event(LogEvent.HOTSPOT_STATE_CHANGED, mode = runningMode?.name, code = routing.hotspot.ordinal)
+        }
         app.dashboard.update { it.copy(active = true, cidr = status.cidr, peers = peers, rxRate = rx, txRate = tx,
             samples = if (sampleVisible) (it.samples + (rx to tx)).takeLast(40) else it.samples,
             routeCount = plan.routes.size, table = routing.table,
             priority = routing.priority, vpn = detector.vpnActive(), excluded = plan.excluded, updatedAt = System.currentTimeMillis(),
             rxTotal = status.rx, txTotal = status.tx, uptimeSeconds = (now - coreStartedAt).coerceAtLeast(0) / 1000,
             connectionMode = runningMode ?: app.store.load().connectionMode,
-            underlay = detector.networkLabel()) }
+            underlay = detector.networkLabel(), hotspot = routing.hotspot) }
     }
 
     private suspend fun backendStatus() = if (runningMode == ConnectionMode.VPN) vpnEngine.status() else app.engine.status()
@@ -363,6 +385,7 @@ class ConnectionService : VpnService() {
         }
         if (registered) runCatching { cm.unregisterNetworkCallback(callback) }
         if (screenRegistered) runCatching { unregisterReceiver(screen) }
+        if (tetherRegistered) runCatching { unregisterReceiver(tether) }
         scope.cancel()
         super.onDestroy()
     }

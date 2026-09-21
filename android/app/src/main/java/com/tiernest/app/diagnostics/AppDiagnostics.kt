@@ -109,6 +109,7 @@ class AppDiagnostics(private val context: Context) {
             val connection = context.getSharedPreferences("tiernest", Context.MODE_PRIVATE)
             val mode = connection.getString("connectionMode", "")?.takeIf { it == "ROOT" || it == "VPN" } ?: "unknown"
             appendLine("mode=$mode requested=${connection.getBoolean("requested", false)} automatic=${connection.getBoolean("automatic", false)} screen_suspend=${connection.getBoolean("screen", false)}")
+            appendLine("hotspot_access=${connection.getBoolean("hotspotAccess", false)}")
             appendLine("pid=${Process.myPid()} recording=${enabled.value} dropped_events=${dropped.get()}")
             val vm = Runtime.getRuntime()
             appendLine("heap_used=${vm.totalMemory() - vm.freeMemory()} heap_max=${vm.maxMemory()}")

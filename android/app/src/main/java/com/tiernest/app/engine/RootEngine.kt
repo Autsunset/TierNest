@@ -11,7 +11,8 @@ import com.tiernest.app.diagnostics.AppDiagnostics
 import com.tiernest.app.diagnostics.LogEvent
 
 data class EngineStatus(val alive: Boolean = false, val cidr: String = "", val rx: Long = 0,
-                        val tx: Long = 0, val table: String = "", val priority: String = "")
+                        val tx: Long = 0, val table: String = "", val priority: String = "",
+                        val hotspot: com.tiernest.app.data.HotspotState = com.tiernest.app.data.HotspotState.DISABLED)
 
 /** The reply frame was fully consumed; the Root session is still usable. */
 internal class RootOperationException(message: String) : IllegalStateException(message)
@@ -90,6 +91,7 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
         connectionOwner = owner
         File(stage, "effective.toml").writeText(ConfigCodec.effective(config,
             defaultHostname = com.tiernest.app.data.DeviceName.current(context)))
+        File(stage, "hotspot-proxies").writeText(ConfigCodec.form(config).subnets + "\n")
         it.call("start")
     }
 
@@ -105,7 +107,15 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
         val fields = callLocked(current, "status").lineSequence().filter { '=' in it }
             .associate { it.substringBefore('=') to it.substringAfter('=') }
         EngineStatus(fields["alive"] == "1", fields["cidr"].orEmpty(), fields["rx"]?.toLongOrNull() ?: 0,
-            fields["tx"]?.toLongOrNull() ?: 0, fields["table"].orEmpty(), fields["pref"].orEmpty())
+            fields["tx"]?.toLongOrNull() ?: 0, fields["table"].orEmpty(), fields["pref"].orEmpty(),
+            com.tiernest.app.data.HotspotState.parse(fields["hotspot_state"]))
+    }
+
+    suspend fun hotspot(enabled: Boolean) = mutex.withLock {
+        val current = session ?: return@withLock
+        withContext(Dispatchers.IO) { File(stage, "hotspot-query").writeText(if (enabled) "on\n" else "off\n") }
+        callLocked(current, "hotspot")
+        Unit
     }
 
     suspend fun peers(): String = mutex.withLock { session?.let { callLocked(it, "peers") } ?: "[]" }

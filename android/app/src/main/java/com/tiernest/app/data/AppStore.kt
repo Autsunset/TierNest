@@ -26,6 +26,7 @@ data class Preferences(
     val accent: String = "mint", val reduceMotion: Boolean = false,
     val connectionMode: ConnectionMode = ConnectionMode.VPN,
     val lastConnectionError: String = "", val sessionStartedAt: Long = 0, val sessionProcessId: Int = 0,
+    val hotspotAccess: Boolean = false,
 )
 
 class AppStore(context: Context) {
@@ -59,7 +60,8 @@ class AppStore(context: Context) {
             prefs.getInt("interval", 30).coerceAtLeast(1), homes, prefs.getString("migrationReview", "").orEmpty(),
             prefs.getString("accent", "mint").orEmpty(), prefs.getBoolean("reduceMotion", false),
             ModePolicy.initial(prefs.getString("connectionMode", null), prefs.all.isNotEmpty() || config.baseFile.exists()),
-            prefs.getString("lastConnectionError", "").orEmpty(), prefs.getLong("sessionStartedAt", 0), prefs.getInt("sessionProcessId", 0))
+            prefs.getString("lastConnectionError", "").orEmpty(), prefs.getLong("sessionStartedAt", 0), prefs.getInt("sessionProcessId", 0),
+            prefs.getBoolean("hotspotAccess", false))
     }
 
     @Synchronized fun update(change: (Preferences) -> Preferences): Preferences {
@@ -76,6 +78,7 @@ class AppStore(context: Context) {
             .putBoolean("reduceMotion", value.reduceMotion).putString("connectionMode", value.connectionMode.name)
             .putString("lastConnectionError", value.lastConnectionError)
             .putLong("sessionStartedAt", value.sessionStartedAt).putInt("sessionProcessId", value.sessionProcessId)
+            .putBoolean("hotspotAccess", value.hotspotAccess)
             .commit()) { "偏好保存失败" }
         requestedState.value = value.requested
         return value

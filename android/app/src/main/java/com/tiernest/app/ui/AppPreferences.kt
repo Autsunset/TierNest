@@ -30,6 +30,7 @@ enum class PreferencePage(val title: String) {
 @Composable fun AppPreferences(model: AppModel, active: Boolean, onOpenConfig: () -> Unit, onImport: () -> Unit, onSubpage: (Boolean) -> Unit) {
     val prefs by model.prefs.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
+    val dashboard by model.dashboard.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val appearance = LocalAppearance.current
     val page by model.preferencePage.collectAsStateWithLifecycle()
@@ -112,6 +113,23 @@ enum class PreferencePage(val title: String) {
                         PreferenceSwitch("锁屏时暂停", "会中断当前传输；亮屏后重新连接", prefs.screenSuspend) { value -> model.preference { it.copy(screenSuspend = value) } }
                     } }
                     item { SmallNote("手动点击「断开并停止」始终优先，切换模式与重启不会撤销手动停止。") }
+                    item { GroupLabel("热点共享") }
+                    item { SettingsCard {
+                        if (prefs.connectionMode == ConnectionMode.ROOT) {
+                            PreferenceSwitch("热点设备访问组网", "连接手机 Wi-Fi 热点的设备无需安装客户端，即可访问组网目标", prefs.hotspotAccess) { value ->
+                                model.preference { it.copy(hotspotAccess = value) }
+                            }
+                            if (prefs.hotspotAccess) {
+                                SmallNote(when {
+                                    !prefs.requested -> "连接组网并开启系统 Wi-Fi 热点后生效"
+                                    !dashboard.active -> "组网连接暂停时，热点共享也会暂停"
+                                    else -> dashboard.hotspot.label
+                                })
+                                if (prefs.screenSuspend) SmallNote("已开启锁屏暂停；想在锁屏后继续共享，请关闭上面的锁屏暂停。")
+                            }
+                        } else SmallNote("热点共享需要 Root 模式；切回 Root 后保留原共享选择。")
+                        SmallNote("仅共享 IPv4 组网目标，普通上网仍由系统热点提供。热点设备不会成为独立节点，远端不能通过此功能主动连接它们。")
+                    } }
                 }
                 PreferencePage.WIFI -> {
                     if (prefs.connectionMode == ConnectionMode.VPN) item { SmallNote("VPN 模式不调用 Root 识别网关。已保存的家庭网络偏好保留，切回 Root 模式后使用。") }

@@ -10,6 +10,7 @@ TN_BACKUPS=/sdcard/Download/TierNest/backups
 mkdir -p "$TN_RUN" "$TN_ROOT/bin" || exit 1
 chmod 0700 "$TN_ROOT" "$TN_RUN" "$TN_ROOT/bin"
 . "$TN_STAGE/engine-lib.sh" || exit 1
+. "$TN_STAGE/hotspot-lib.sh" || exit 1
 
 # One command owner. Never steal a live lock or kill an arbitrary PID.
 if ! mkdir "$TN_RUN/session.lock" 2>/dev/null; then
@@ -23,6 +24,7 @@ if ! mkdir "$TN_RUN/session.lock" 2>/dev/null; then
 fi
 printf '%s %s\n' "$$" "$(pid_identity "$$")" > "$TN_RUN/session.lock/owner"
 cleanup() {
+    cleanup_hotspot
     stop_core
     cleanup_routes
     cleanup_rpc
@@ -31,7 +33,7 @@ cleanup() {
 }
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
-stop_core && cleanup_routes && cleanup_rpc || exit 1
+cleanup_hotspot && stop_core && cleanup_routes && cleanup_rpc || exit 1
 # Root-owned payloads are installed and verified once per digest. A standby
 # identity check must not reread tens of megabytes of binaries every 30 seconds.
 if ! cmp -s "$TN_STAGE/SHA256SUMS" "$TN_ROOT/bin/SHA256SUMS" ||

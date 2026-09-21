@@ -17,6 +17,7 @@ data class Dashboard(
     val rxTotal: Long = 0, val txTotal: Long = 0, val uptimeSeconds: Long = 0,
     val connectionMode: com.tiernest.app.data.ConnectionMode = com.tiernest.app.data.ConnectionMode.VPN,
     val underlay: String = "",
+    val hotspot: com.tiernest.app.data.HotspotState = com.tiernest.app.data.HotspotState.DISABLED,
 )
 
 class TierNestApp : Application() {

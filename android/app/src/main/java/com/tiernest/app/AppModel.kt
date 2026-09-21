@@ -65,7 +65,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
                 } }
                 if (revision == preferenceRevision) prefs.value = next.copy(requested = app.store.requested.value)
                 if (old.screenSuspend != next.screenSuspend || old.automatic != next.automatic || old.homes != next.homes ||
-                    old.detection != next.detection || old.interval != next.interval) ConnectionService.settingsChanged(app)
+                    old.detection != next.detection || old.interval != next.interval ||
+                    old.hotspotAccess != next.hotspotAccess) ConnectionService.settingsChanged(app)
             } catch (error: Exception) {
                 app.diagnostics.event(com.tiernest.app.diagnostics.LogEvent.SETTINGS_FAILED, error)
                 if (revision == preferenceRevision) prefs.value = app.store.load()
