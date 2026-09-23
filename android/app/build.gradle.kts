@@ -22,8 +22,8 @@ android {
         applicationId = if (ciSigning) "com.tiernest.app.ci" else "com.tiernest.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.2.0-rc01" + if (ciSigning) "-ci" else ""
+        versionCode = 12
+        versionName = "0.2.0-rc02" + if (ciSigning) "-ci" else ""
         manifestPlaceholders["appLabel"] = if (ciSigning) "TierNest CI" else "TierNest"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }

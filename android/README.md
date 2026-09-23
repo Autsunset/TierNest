@@ -1,6 +1,6 @@
 # TierNest Android App
 
-**0.2.0-rc01 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
+**0.2.0-rc02 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
@@ -169,8 +169,8 @@ sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-CI 模式输出 `dist/TierNest-CI-v0.2.0-rc01-ci.apk`；维护者发布模式输出
-`dist/TierNest-App-v0.2.0-rc01.apk`。上游下载、Cargo 依赖、工具版本和
+CI 模式输出 `dist/TierNest-CI-v0.2.0-rc02-ci.apk`；维护者发布模式输出
+`dist/TierNest-App-v0.2.0-rc02.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
 候选包采用 Release 优化且不可调试。维护者包保留已发布 APK 的签名身份，私钥现由
