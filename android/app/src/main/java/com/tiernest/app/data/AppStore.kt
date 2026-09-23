@@ -34,6 +34,10 @@ class AppStore(context: Context) {
     private val config = AtomicFile(File(context.filesDir, "config.toml"))
     private val requestedState = MutableStateFlow(prefs.getBoolean("requested", false))
     val requested = requestedState.asStateFlow()
+    // Every writer of this store invalidates the cache under the same monitor,
+    // so hot readers (service reconcile, sampling, the tile) avoid re-parsing
+    // the home-network JSON and copying the preference map on each call.
+    @Volatile private var cached: Preferences? = null
 
     @Synchronized fun readConfig(): String = if (config.baseFile.exists()) config.openRead().bufferedReader().use { it.readText() } else ConfigCodec.template
 
@@ -49,9 +53,12 @@ class AppStore(context: Context) {
             check(config.openRead().use { bytes.contentEquals(it.readBytes()) }) { "配置写入校验失败，未确认保存成功" }
         }
         catch (error: Throwable) { config.failWrite(output); throw error }
+        finally { cached = null } // The default connection mode depends on the file's existence.
     }
 
-    fun load(): Preferences {
+    fun load(): Preferences = cached ?: synchronized(this) { cached ?: read().also { cached = it } }
+
+    private fun read(): Preferences {
         fun <T : Enum<T>> enum(key: String, default: T, values: Array<T>) = values.firstOrNull { it.name == prefs.getString(key, "") } ?: default
         val homes = runCatching {
             val array = JSONArray(prefs.getString("homes", "[]"))
@@ -74,6 +81,7 @@ class AppStore(context: Context) {
 
     @Synchronized fun update(change: (Preferences) -> Preferences): Preferences {
         val value = change(load())
+        cached = null // In-memory preferences change even when the disk commit fails.
         val homes = JSONArray().apply { value.homes.forEach { h -> put(JSONObject().apply {
             put("iface", h.iface); put("gateway", h.gateway); put("mac", h.mac); put("target", h.target); put("port", h.port)
             put("wifiVerified", h.wifiVerified)

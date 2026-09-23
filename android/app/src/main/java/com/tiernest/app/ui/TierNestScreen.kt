@@ -107,6 +107,7 @@ import kotlinx.coroutines.launch
 }
 
 @Composable private fun Overview(model: AppModel, state: Dashboard, prefs: Preferences, onConnect: () -> Unit, onConfig: () -> Unit) {
+    val clock = remember { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { SettingsHeader("TierNest", "YOUR PRIVATE NETWORK") }
         item { ConnectionModePicker(model) }
@@ -166,7 +167,7 @@ import kotlinx.coroutines.launch
             DetailLine("组网路由", if (state.active) "${state.routeCount} 个目标" else "—")
             if (state.table.isNotBlank()) DetailLine("策略路由", "表 ${state.table} · 优先级 ${state.priority}")
             if (prefs.connectionMode == ConnectionMode.ROOT) DetailLine("系统 VPN", if (state.vpn) "已检测到" else "未检测到")
-            if (state.updatedAt > 0) DetailLine("数据更新", java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(state.updatedAt)))
+            if (state.updatedAt > 0) DetailLine("数据更新", clock.format(java.util.Date(state.updatedAt)))
             TextButton(onClick = onConfig) { Text("管理组网配置"); Icon(Icons.Rounded.ChevronRight, null) }
         } }
         if (state.excluded.isNotEmpty()) item { Panel {

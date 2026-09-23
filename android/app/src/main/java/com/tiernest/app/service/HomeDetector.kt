@@ -9,6 +9,9 @@ import com.tiernest.app.data.*
 import java.net.Inet4Address
 
 data class WifiLink(val network: Network, val iface: String, val gateway: String, val source: String)
+data class NetworkObservation(val physicalNetworks: List<String>, val vpnActive: Boolean, val label: String)
+
+private val localInterface = Regex("(?:wlan[0-9]+|ap[0-9]+|ap_[A-Za-z0-9_-]+|apbr[A-Za-z0-9_-]*|swlan[0-9]+|softap[0-9]+|br_tether[A-Za-z0-9_-]*)")
 
 class HomeDetector(private val app: TierNestApp) {
     private val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -26,20 +29,33 @@ class HomeDetector(private val app: TierNestApp) {
         WifiLink(network, iface, gateway, source)
     }
 
-    fun physicalNetworks(): List<String> = (cm.allNetworks.flatMap { network ->
-        val caps = cm.getNetworkCapabilities(network)
-        if (caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true) {
+    /** One pass over the system networks per sample: physical IPv4 prefixes,
+     * VPN presence and the underlay label share the same binder queries. */
+    fun observe(): NetworkObservation {
+        val physical = mutableListOf<String>()
+        val labels = LinkedHashSet<String>()
+        var vpn = false
+        for (network in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) vpn = true
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) continue
             cm.getLinkProperties(network)?.linkAddresses.orEmpty().filter { it.address is Inet4Address }
-                .map { "${it.address.hostAddress}/${it.prefixLength}" }
-        } else emptyList()
-    } + runCatching {
-        // Hotspot downstreams are often absent from ConnectivityManager's
-        // upstream Networks. They must still be excluded from overlay routes.
-        java.net.NetworkInterface.getNetworkInterfaces().toList().filter { iface ->
-            iface.isUp && iface.name.matches(Regex("(?:wlan[0-9]+|ap[0-9]+|ap_[A-Za-z0-9_-]+|apbr[A-Za-z0-9_-]*|swlan[0-9]+|softap[0-9]+|br_tether[A-Za-z0-9_-]*)"))
-        }.flatMap { iface -> iface.interfaceAddresses.filter { it.address is Inet4Address }
-            .map { "${it.address.hostAddress}/${it.networkPrefixLength}" } }
-    }.getOrDefault(emptyList())).distinct()
+                .mapTo(physical) { "${it.address.hostAddress}/${it.prefixLength}" }
+            when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> labels += "Wi-Fi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> labels += "移动数据"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> labels += "以太网"
+            }
+        }
+        runCatching {
+            // Hotspot downstreams are often absent from ConnectivityManager's
+            // upstream Networks. They must still be excluded from overlay routes.
+            java.net.NetworkInterface.getNetworkInterfaces().toList().filter { iface -> iface.isUp && localInterface.matches(iface.name) }
+                .flatMap { iface -> iface.interfaceAddresses.filter { it.address is Inet4Address }
+                    .map { "${it.address.hostAddress}/${it.networkPrefixLength}" } }
+        }.onSuccess { physical += it }
+        return NetworkObservation(physical.distinct(), vpn, labels.joinToString(" / ").ifBlank { "未检测到物理网络" })
+    }
 
     fun physicalSignature(): String = cm.allNetworks.mapNotNull { network ->
         val caps = cm.getNetworkCapabilities(network)
@@ -50,18 +66,6 @@ class HomeDetector(private val app: TierNestApp) {
                 props?.routes?.filter { it.isDefaultRoute }?.map { it.gateway?.hostAddress }?.sortedBy { it }
         } else null
     }.sorted().joinToString()
-
-    fun vpnActive(): Boolean = cm.allNetworks.any { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
-    fun networkLabel(): String = cm.allNetworks.mapNotNull { network ->
-        val caps = cm.getNetworkCapabilities(network) ?: return@mapNotNull null
-        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return@mapNotNull null
-        when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "移动数据"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "以太网"
-            else -> null
-        }
-    }.distinct().joinToString(" / ").ifBlank { "未检测到物理网络" }
 
     suspend fun learn(target: String, port: Int): HomeNetwork {
         require(RoutePlanner.cidr(target)?.prefix == 32 && !target.contains('/')) { "请输入虚拟 IPv4 地址" }

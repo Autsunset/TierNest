@@ -273,8 +273,8 @@ object LegacyImport {
         }
         return records.mapNotNull {
             val p = it.split('|')
-            if (p.size != 5 || !p[0].matches(Regex("wlan[0-9]+")) || RoutePlanner.cidr(p[1]) == null ||
-                !p[2].matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) || RoutePlanner.cidr(p[3]) == null ||
+            if (p.size != 5 || !WifiIdentity.iface.matches(p[0]) || RoutePlanner.cidr(p[1]) == null ||
+                !WifiIdentity.mac.matches(p[2]) || RoutePlanner.cidr(p[3]) == null ||
                 (p[4].toIntOrNull() ?: 0) !in 1..65535) null
             else HomeNetwork(p[0], p[1], p[2], p[3], p[4].toInt())
         }

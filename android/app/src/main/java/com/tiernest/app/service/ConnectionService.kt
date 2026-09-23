@@ -45,14 +45,27 @@ class ConnectionService : VpnService() {
     private var stopReason = ""
     private var loggedPhase: DesiredConnection? = null
     private val recovery = RootRecoveryPolicy()
+    private val maintenancePolicy = RootMaintenancePolicy()
+    // Delivered on the connectivity thread. Signal-strength and metering
+    // updates arrive constantly; only changes the reconcile logic can observe
+    // (transport, VPN/internet/validated bits, link properties) wake it.
+    private val capabilityKeys = java.util.concurrent.ConcurrentHashMap<Network, String>()
     private var requestRevision = 0L
     private var operationDesired: DesiredConnection? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { events.trySend(Unit) }
-        override fun onLost(network: Network) { events.trySend(Unit) }
+        override fun onLost(network: Network) { capabilityKeys.remove(network); events.trySend(Unit) }
         override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) { events.trySend(Unit) }
-        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) { events.trySend(Unit) }
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            val key = buildString {
+                for (transport in intArrayOf(NetworkCapabilities.TRANSPORT_WIFI, NetworkCapabilities.TRANSPORT_CELLULAR,
+                    NetworkCapabilities.TRANSPORT_ETHERNET, NetworkCapabilities.TRANSPORT_VPN)) append(if (caps.hasTransport(transport)) '1' else '0')
+                for (capability in intArrayOf(NetworkCapabilities.NET_CAPABILITY_NOT_VPN, NetworkCapabilities.NET_CAPABILITY_INTERNET,
+                    NetworkCapabilities.NET_CAPABILITY_VALIDATED)) append(if (caps.hasCapability(capability)) '1' else '0')
+            }
+            if (capabilityKeys.put(network, key) != key) events.trySend(Unit)
+        }
     }
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { events.trySend(Unit) }
@@ -61,7 +74,7 @@ class ConnectionService : VpnService() {
     // so an intent never supplies an interface or a route to install.
     private val tether = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (app.store.load().hotspotAccess) events.trySend(Unit)
+            if (app.store.load().hotspotAccess) { maintenancePolicy.hotspotChanged(); events.trySend(Unit) }
         }
     }
 
@@ -215,8 +228,9 @@ class ConnectionService : VpnService() {
                 }
             }
         } else detector.reset()
+        val interactive = getSystemService(PowerManager::class.java).isInteractive
         val desired = ConnectionPolicy.decide(app.store.load().requested, prefs.screenSuspend && screenRegistered,
-            getSystemService(PowerManager::class.java).isInteractive, automatic, home, eventHealthy)
+            interactive, automatic, home, eventHealthy)
         operationDesired = desired
         recovery.reconcile(desired)
         if (desired != loggedPhase) {
@@ -295,7 +309,7 @@ class ConnectionService : VpnService() {
         val interval = when {
             desired == DesiredConnection.SCREEN_STANDBY -> null
             automatic && prefs.detection == DetectionMode.HTTP -> prefs.interval.toLong() * 1000
-            coreActive -> 60_000L
+            coreActive -> maintenancePolicy.interval(interactive)
             else -> null
         }
         if (interval != null) maintenance = scope.launch { delay(interval); events.trySend(Unit) }
@@ -305,18 +319,35 @@ class ConnectionService : VpnService() {
         val status = backendStatus()
         check(status.alive) { "核心进程已退出" }
         val peerJson = if (runningMode == ConnectionMode.VPN) vpnEngine.peers() else app.engine.peers()
-        val physical = withContext(Dispatchers.IO) { detector.physicalNetworks() }
+        val network = withContext(Dispatchers.IO) { detector.observe() }
         val (peers, plan) = withContext(Dispatchers.Default) {
             val peers = PeerCodec.decode(peerJson)
-            peers to RoutePlanner.plan(status.cidr, peers, physical)
+            peers to RoutePlanner.plan(status.cidr, peers, network.physicalNetworks)
         }
+        var synced = false
         if (syncRoutes) {
             check(plan.routes.isNotEmpty()) { "虚拟网段与物理网络冲突，或没有可用的 IPv4 路由" }
-            if (runningMode == ConnectionMode.VPN) vpnEngine.sync(this, plan.routes) else app.engine.sync(plan.routes)
-            if (runningMode == ConnectionMode.ROOT) {
+            // VpnEngine short-circuits an unchanged signature itself. The Root
+            // journal sync and hotspot rules are re-driven only when their inputs
+            // changed, the lease vanished, or a bounded forced pass is due.
+            val clock = SystemClock.elapsedRealtime()
+            val routeSyncNeeded = maintenancePolicy.routeSyncNeeded(plan.routes, status.table.isNotBlank(), clock)
+            if (runningMode == ConnectionMode.VPN) {
+                vpnEngine.sync(this, plan.routes)
+                maintenancePolicy.routesSynced(plan.routes, clock)
+            } else {
+                if (routeSyncNeeded) {
+                    app.engine.sync(plan.routes)
+                    maintenancePolicy.routesSynced(plan.routes, clock)
+                    synced = true
+                }
                 val latest = app.store.load()
-                if (latest.hotspotAccess || app.dashboard.value.hotspot != HotspotState.DISABLED) {
-                    app.engine.hotspot(latest.requested && latest.hotspotAccess)
+                val enabled = latest.requested && latest.hotspotAccess
+                if ((latest.hotspotAccess || app.dashboard.value.hotspot != HotspotState.DISABLED) &&
+                    maintenancePolicy.hotspotSyncNeeded(enabled, app.dashboard.value.hotspot, clock)) {
+                    app.engine.hotspot(enabled)
+                    maintenancePolicy.hotspotSynced(enabled, clock)
+                    synced = true
                 }
             }
         }
@@ -327,23 +358,24 @@ class ConnectionService : VpnService() {
         val tx = if (seconds <= 0 || status.tx < (old?.second?.tx ?: 0)) 0f else (status.tx - (old?.second?.tx ?: status.tx)) / seconds
         val sampleVisible = app.uiVisible.value && app.uiDataVisible.value
         lastSample = if (sampleVisible) now to status else null
-        val routing = if (syncRoutes) backendStatus() else status
+        val routing = if (synced) backendStatus() else status
         if (routing.hotspot != app.dashboard.value.hotspot) {
             app.diagnostics.event(LogEvent.HOTSPOT_STATE_CHANGED, mode = runningMode?.name, code = routing.hotspot.ordinal)
         }
         app.dashboard.update { it.copy(active = true, cidr = status.cidr, peers = peers, rxRate = rx, txRate = tx,
             samples = if (sampleVisible) (it.samples + (rx to tx)).takeLast(40) else it.samples,
             routeCount = plan.routes.size, table = routing.table,
-            priority = routing.priority, vpn = detector.vpnActive(), excluded = plan.excluded, updatedAt = System.currentTimeMillis(),
+            priority = routing.priority, vpn = network.vpnActive, excluded = plan.excluded, updatedAt = System.currentTimeMillis(),
             rxTotal = status.rx, txTotal = status.tx, uptimeSeconds = (now - coreStartedAt).coerceAtLeast(0) / 1000,
             connectionMode = runningMode ?: app.store.load().connectionMode,
-            underlay = detector.networkLabel(), hotspot = routing.hotspot) }
+            underlay = network.label, hotspot = routing.hotspot) }
     }
 
     private suspend fun backendStatus() = if (runningMode == ConnectionMode.VPN) vpnEngine.status() else app.engine.status()
     private suspend fun stopBackend() {
         coreActive = false
         lastSample = null
+        maintenancePolicy.reset()
         if (runningMode != null) app.diagnostics.event(LogEvent.CORE_STOP, mode = runningMode?.name)
         when (runningMode) {
             ConnectionMode.VPN -> vpnEngine.stop(owner)

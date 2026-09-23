@@ -132,14 +132,14 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
     }
 
     private fun validateWifi(iface: String, gateway: String) {
-        require(iface.matches(Regex("wlan[0-9]+"))) { "当前 Wi-Fi 接口不受支持" }
+        require(com.tiernest.app.data.WifiIdentity.iface.matches(iface)) { "当前 Wi-Fi 接口不受支持" }
         require(!gateway.contains('/') && com.tiernest.app.data.RoutePlanner.cidr(gateway)?.prefix == 32)
     }
 
     private suspend fun readGateway(current: RootSession, iface: String, gateway: String): String {
         File(stage, "wifi-query").writeText("$iface $gateway\n")
         return current.call("gateway").trim().also { mac ->
-            if (!mac.matches(Regex("([0-9a-f]{2}:){5}[0-9a-f]{2}")) || mac == "00:00:00:00:00:00" ||
+            if (!com.tiernest.app.data.WifiIdentity.mac.matches(mac) || mac == "00:00:00:00:00:00" ||
                 (mac.substringBefore(':').toInt(16) and 1) != 0) throw RootOperationException("无法读取 Wi-Fi 网关身份")
         }
     }

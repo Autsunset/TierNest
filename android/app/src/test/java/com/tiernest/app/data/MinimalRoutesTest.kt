@@ -21,4 +21,13 @@ class MinimalRoutesTest {
         assertEquals(listOf("10.77.0.9/32"), RoutePlanner.minimalRoutes(plan.routes))
         assertTrue(plan.excluded.contains("10.77.0.2/24"))
     }
+
+    @Test fun cidrParsingAcceptsOnlyDottedDecimalOctets() {
+        assertEquals("10.77.0.0/24", RoutePlanner.cidr("10.77.0.9/24").toString())
+        assertEquals("1.2.3.4/32", RoutePlanner.cidr("001.2.3.4").toString())
+        for (invalid in listOf("", "10.77.0", "10.77.0.9.1", "10.77.0.256", "10.77.0.9a", "1.2.3.4/33", "1.2.3.4/x",
+            "1.2.3.4/24/1", "1..3.4", "1.2.3.1234", "٣.2.3.4", "-1.2.3.4", "+1.2.3.4", "1.2.3.4 ")) {
+            assertNull(invalid, RoutePlanner.cidr(invalid))
+        }
+    }
 }

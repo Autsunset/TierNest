@@ -16,7 +16,7 @@ object RoutePlanner {
         val parts = input.split('/')
         if (parts.size > 2) return null
         val octets = parts[0].split('.')
-        if (octets.size != 4 || octets.any { !it.matches(Regex("[0-9]{1,3}")) }) return null
+        if (octets.size != 4 || octets.any { it.length !in 1..3 || !it.all { c -> c in '0'..'9' } }) return null
         val values = octets.map { it.toInt() }
         if (values.any { it !in 0..255 }) return null
         val prefix = if (parts.size == 1) 32 else parts[1].toIntOrNull() ?: return null

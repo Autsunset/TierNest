@@ -30,8 +30,12 @@ cleanup_rpc() {
 
 pid_identity() {
     [ -r "/proc/$1/stat" ] || return 1
-    # Strip comm (which can contain spaces) before reading starttime.
-    sed 's/.*) //' "/proc/$1/stat" | awk '{print $20}'
+    read -r tn_stat < "/proc/$1/stat" || [ -n "$tn_stat" ] || return 1
+    # Strip comm (which can contain spaces) before reading starttime. Pure
+    # shell: identity checks run on every status poll and must not fork.
+    tn_stat=${tn_stat##*) }
+    set -f; set -- $tn_stat; set +f
+    printf '%s\n' "${20}"
 }
 
 core_alive() {
@@ -211,12 +215,15 @@ start_core() {
 }
 
 engine_status() {
-    if core_alive; then printf 'alive=1\npid=%s\n' "$tn_pid"; else printf 'alive=0\n'; fi
-    if core_alive && ip link show dev tiernest0 >/dev/null 2>&1; then
-        printf 'cidr=%s\n' "$(ip -o -4 addr show dev tiernest0 | awk 'NR==1{print $4}')"
-        printf 'rx=%s\n' "$(cat /sys/class/net/tiernest0/statistics/rx_bytes 2>/dev/null)"
-        printf 'tx=%s\n' "$(cat /sys/class/net/tiernest0/statistics/tx_bytes 2>/dev/null)"
-    fi
+    if core_alive; then
+        printf 'alive=1\npid=%s\n' "$tn_pid"
+        if ip link show dev tiernest0 >/dev/null 2>&1; then
+            printf 'cidr=%s\n' "$(ip -o -4 addr show dev tiernest0 | awk 'NR==1{print $4}')"
+            read -r tn_rx < /sys/class/net/tiernest0/statistics/rx_bytes 2>/dev/null || tn_rx=
+            read -r tn_tx < /sys/class/net/tiernest0/statistics/tx_bytes 2>/dev/null || tn_tx=
+            printf 'rx=%s\ntx=%s\n' "$tn_rx" "$tn_tx"
+        fi
+    else printf 'alive=0\n'; fi
     if read_lease; then printf 'table=%s\npref=%s\n' "$tn_table" "$tn_pref"; fi
     [ ! -f "$TN_RUN/hotspot.status" ] || cat "$TN_RUN/hotspot.status"
 }

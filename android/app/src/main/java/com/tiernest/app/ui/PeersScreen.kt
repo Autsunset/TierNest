@@ -30,13 +30,14 @@ import com.tiernest.app.data.*
     var selected by remember { mutableStateOf<Peer?>(null) }
     val sorted = remember(state.peers) { state.peers.sortedBy { it.hops ?: Int.MAX_VALUE } }
     val topology = remember(state.peers, state.cidr) { TopologyBuilder.build(state.peers, state.cidr) }
+    val counts = remember(sorted) { Triple(sorted.count { it.hops == 1 }, sorted.count { (it.hops ?: 0) > 1 }, sorted.flatMap { it.subnets }.distinct().size) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SettingsHeader("网络节点", "NETWORK NODES") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                NodeCount("直连", sorted.count { it.hops == 1 }, Modifier.weight(1f))
-                NodeCount("多跳", sorted.count { (it.hops ?: 0) > 1 }, Modifier.weight(1f))
-                NodeCount("共享网段", sorted.flatMap { it.subnets }.distinct().size, Modifier.weight(1f))
+                NodeCount("直连", counts.first, Modifier.weight(1f))
+                NodeCount("多跳", counts.second, Modifier.weight(1f))
+                NodeCount("共享网段", counts.third, Modifier.weight(1f))
             }
         }
         item { ChoiceStrip(listOf("节点列表", "路由拓扑"), view, { view = it }, Modifier.fillMaxWidth()) }
