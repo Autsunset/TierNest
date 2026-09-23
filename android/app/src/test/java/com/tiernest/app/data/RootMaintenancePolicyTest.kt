@@ -44,18 +44,22 @@ class RootMaintenancePolicyTest {
 
     @Test fun intervalBacksOffOnlyWhenScreenIsOffAndPlanIsStable() {
         val policy = RootMaintenancePolicy()
-        assertEquals(60_000L, policy.interval(interactive = false))
+        assertEquals(60_000L, policy.interval(interactive = false, now = 0))
         policy.routesSynced(routes, now = 0)
         policy.routeSyncNeeded(routes, leaseHeld = true, now = 1)
-        assertEquals(60_000L, policy.interval(interactive = false))
+        assertEquals(60_000L, policy.interval(interactive = false, now = 1))
         policy.routeSyncNeeded(routes, leaseHeld = true, now = 2)
-        assertEquals(120_000L, policy.interval(interactive = false))
-        assertEquals(60_000L, policy.interval(interactive = true))
+        assertEquals(120_000L, policy.interval(interactive = false, now = 2))
+        assertEquals(60_000L, policy.interval(interactive = true, now = 2))
         policy.routeSyncNeeded(routes, leaseHeld = true, now = 3)
-        assertEquals(240_000L, policy.interval(interactive = false))
+        assertEquals(240_000L, policy.interval(interactive = false, now = 3))
         repeat(20) { policy.routeSyncNeeded(routes, leaseHeld = true, now = 4) }
-        assertEquals(300_000L, policy.interval(interactive = false))
-        policy.routeSyncNeeded(routes.take(1), leaseHeld = true, now = 5)
-        assertEquals(60_000L, policy.interval(interactive = false))
+        assertEquals(299_996L, policy.interval(interactive = false, now = 4))
+        assertEquals(1_000L, policy.interval(interactive = false, now = 299_000))
+        policy.externalWake()
+        policy.routeSyncNeeded(routes, leaseHeld = true, now = 5)
+        assertEquals(60_000L, policy.interval(interactive = false, now = 5))
+        policy.routeSyncNeeded(routes.take(1), leaseHeld = true, now = 6)
+        assertEquals(60_000L, policy.interval(interactive = false, now = 6))
     }
 }

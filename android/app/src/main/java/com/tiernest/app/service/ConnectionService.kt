@@ -46,6 +46,7 @@ class ConnectionService : VpnService() {
     private var loggedPhase: DesiredConnection? = null
     private val recovery = RootRecoveryPolicy()
     private val maintenancePolicy = RootMaintenancePolicy()
+    private val externalWakePending = java.util.concurrent.atomic.AtomicBoolean(false)
     // Delivered on the connectivity thread. Signal-strength and metering
     // updates arrive constantly; only changes the reconcile logic can observe
     // (transport, VPN/internet/validated bits, link properties) wake it.
@@ -54,9 +55,9 @@ class ConnectionService : VpnService() {
     private var operationDesired: DesiredConnection? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) { events.trySend(Unit) }
-        override fun onLost(network: Network) { capabilityKeys.remove(network); events.trySend(Unit) }
-        override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) { events.trySend(Unit) }
+        override fun onAvailable(network: Network) { signalEvent() }
+        override fun onLost(network: Network) { capabilityKeys.remove(network); signalEvent() }
+        override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) { signalEvent() }
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
             val key = buildString {
                 for (transport in intArrayOf(NetworkCapabilities.TRANSPORT_WIFI, NetworkCapabilities.TRANSPORT_CELLULAR,
@@ -64,18 +65,23 @@ class ConnectionService : VpnService() {
                 for (capability in intArrayOf(NetworkCapabilities.NET_CAPABILITY_NOT_VPN, NetworkCapabilities.NET_CAPABILITY_INTERNET,
                     NetworkCapabilities.NET_CAPABILITY_VALIDATED)) append(if (caps.hasCapability(capability)) '1' else '0')
             }
-            if (capabilityKeys.put(network, key) != key) events.trySend(Unit)
+            if (capabilityKeys.put(network, key) != key) signalEvent()
         }
     }
     private val screen = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { events.trySend(Unit) }
+        override fun onReceive(context: Context, intent: Intent) { signalEvent() }
     }
     // A cue only: the privileged command independently reads live tether state,
     // so an intent never supplies an interface or a route to install.
     private val tether = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (app.store.load().hotspotAccess) { maintenancePolicy.hotspotChanged(); events.trySend(Unit) }
+            if (app.store.load().hotspotAccess) { maintenancePolicy.hotspotChanged(); signalEvent() }
         }
+    }
+
+    private fun signalEvent() {
+        externalWakePending.set(true)
+        events.trySend(Unit)
     }
 
     override fun onCreate() {
@@ -112,7 +118,10 @@ class ConnectionService : VpnService() {
             try {
                 for (ignored in events) {
                     delay(400) // Merge bursts of address, network and VPN callbacks.
-                    operations.withLock { attempt { reconcile() } }
+                    operations.withLock {
+                        if (externalWakePending.getAndSet(false)) maintenancePolicy.externalWake()
+                        attempt { reconcile() }
+                    }
                 }
             } finally {
                 withContext(NonCancellable) { operations.withLock { runCatching { stopBackend() } } }
@@ -128,7 +137,7 @@ class ConnectionService : VpnService() {
                             attempt { sample() }
                         }
                     } }
-                        .onFailure { if (it !is CancellationException) events.trySend(Unit) }
+                        .onFailure { if (it !is CancellationException) signalEvent() }
                     delay(3000)
                 }
             }
@@ -149,7 +158,7 @@ class ConnectionService : VpnService() {
         }
         if (app.store.load().requested) app.store.update { it.copy(
             sessionStartedAt = System.currentTimeMillis(), sessionProcessId = android.os.Process.myPid()) }
-        events.trySend(Unit)
+        signalEvent()
         // Recover a system-killed foreground service; explicit stop and core
         // failures persist requested=false and call stopSelf, so never loop.
         return START_STICKY
@@ -198,7 +207,7 @@ class ConnectionService : VpnService() {
                 // A single, non-waking delay. Keep the operation lock so network
                 // callbacks cannot bypass the backoff; manual stop persists now.
                 if (decision == RecoveryDecision.RETRY) delay(1500)
-                events.trySend(Unit) // Re-read stop/mode/screen/home before starting.
+                signalEvent() // Re-read stop/mode/screen/home before starting.
             }
             RecoveryDecision.FAILED -> {
                 val message = (error.message ?: "连接失败，请重新连接") + cleanupWarning
@@ -244,7 +253,7 @@ class ConnectionService : VpnService() {
         if (desired == DesiredConnection.STOPPED) {
             app.dashboard.update { it.copy(phase = "正在断开", busy = true) }
             stopBackend(); coreActive = false; lastSample = null
-            if (app.store.load().requested) { events.trySend(Unit); return }
+            if (app.store.load().requested) { signalEvent(); return }
             app.dashboard.value = Dashboard(error = stopReason)
             finishService()
             return
@@ -276,7 +285,7 @@ class ConnectionService : VpnService() {
                     ModePolicy.automatic(latest.connectionMode, latest.automatic), home, eventHealthy)
                 recovery.reconcile(latestDesired)
                 if (latestDesired != DesiredConnection.CONNECTED || latest.connectionMode != prefs.connectionMode) {
-                    events.trySend(Unit); return
+                    signalEvent(); return
                 }
                 runningMode = prefs.connectionMode
                 recovery.starting(prefs.connectionMode)
@@ -288,7 +297,7 @@ class ConnectionService : VpnService() {
                 for (attempt in 0 until 60) {
                     val latest = app.store.load()
                     if (!latest.requested || latest.connectionMode != runningMode) {
-                        stopBackend(); events.trySend(Unit); return
+                        stopBackend(); signalEvent(); return
                     }
                     val status = backendStatus()
                     if (!status.alive) error("EasyTier 核心已退出；请检查配置、Root 权限与 SELinux 限制")
@@ -309,7 +318,7 @@ class ConnectionService : VpnService() {
         val interval = when {
             desired == DesiredConnection.SCREEN_STANDBY -> null
             automatic && prefs.detection == DetectionMode.HTTP -> prefs.interval.toLong() * 1000
-            coreActive -> maintenancePolicy.interval(interactive)
+            coreActive -> maintenancePolicy.interval(interactive, SystemClock.elapsedRealtime())
             else -> null
         }
         if (interval != null) maintenance = scope.launch { delay(interval); events.trySend(Unit) }
@@ -331,7 +340,8 @@ class ConnectionService : VpnService() {
             // journal sync and hotspot rules are re-driven only when their inputs
             // changed, the lease vanished, or a bounded forced pass is due.
             val clock = SystemClock.elapsedRealtime()
-            val routeSyncNeeded = maintenancePolicy.routeSyncNeeded(plan.routes, status.table.isNotBlank(), clock)
+            val leaseHeld = runningMode != ConnectionMode.ROOT || status.table.isNotBlank()
+            val routeSyncNeeded = maintenancePolicy.routeSyncNeeded(plan.routes, leaseHeld, clock)
             if (runningMode == ConnectionMode.VPN) {
                 vpnEngine.sync(this, plan.routes)
                 maintenancePolicy.routesSynced(plan.routes, clock)
@@ -445,7 +455,7 @@ class ConnectionService : VpnService() {
          * startup: BootReceiver must still see the persisted resume preference. */
         fun refreshFromUserAction(context: Context) {
             val app = context.applicationContext as TierNestApp
-            activeService?.let { it.events.trySend(Unit); return }
+            activeService?.let { it.signalEvent(); return }
             if (pendingStart != null) return
             val previous = app.store.load()
             if (previous.requested) {
@@ -466,7 +476,7 @@ class ConnectionService : VpnService() {
             }
             // Persist stop before waiting for any running root command or callback.
             app.store.update { it.copy(requested = connect, lastConnectionError = if (connect) "" else stopMessage) }
-            activeService?.let { it.requestRevision++; it.stopReason = stopMessage; it.events.trySend(Unit); return }
+            activeService?.let { it.requestRevision++; it.stopReason = stopMessage; it.signalEvent(); return }
             if (!connect) { pendingStart = null; app.dashboard.value = Dashboard(error = stopMessage); return }
             if (pendingStart != null) return
             val ticket = Any()
@@ -496,14 +506,14 @@ class ConnectionService : VpnService() {
         fun settingsChanged(context: Context) {
             val app = context.applicationContext as TierNestApp
             if (app.store.load().requested) {
-                activeService?.let { it.events.trySend(Unit); return }
+                activeService?.let { it.signalEvent(); return }
                 request(context, true)
             }
         }
         fun reconnect(context: Context) {
             val app = context.applicationContext as TierNestApp
             if (!app.store.load().requested) return // A manual stop during save always wins.
-            activeService?.let { it.requestRevision++; it.pendingReconnect = true; it.events.trySend(Unit); return }
+            activeService?.let { it.requestRevision++; it.pendingReconnect = true; it.signalEvent(); return }
             settingsChanged(context)
         }
     }

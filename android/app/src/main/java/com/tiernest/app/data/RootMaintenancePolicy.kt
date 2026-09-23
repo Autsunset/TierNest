@@ -21,12 +21,15 @@ class RootMaintenancePolicy(
         syncedRoutes = null; syncedAt = 0; hotspotEnabled = null; hotspotAt = 0; hotspotDirty = true; stableSamples = 0
     }
 
+    /** An external event starts a fresh maintenance cadence. */
+    fun externalWake() { stableSamples = 0 }
+
     /** The system reported a tethering change; the privileged side must re-read it. */
     fun hotspotChanged() { hotspotDirty = true }
 
     fun routeSyncNeeded(routes: List<String>, leaseHeld: Boolean, now: Long): Boolean {
         val same = routes == syncedRoutes
-        stableSamples = if (same) stableSamples + 1 else 0
+        stableSamples = if (same && leaseHeld) stableSamples + 1 else 0
         if (!same) hotspotDirty = true // Hotspot targets are derived from the routes.
         return !same || !leaseHeld || now - syncedAt >= forceAfterMs
     }
@@ -41,8 +44,12 @@ class RootMaintenancePolicy(
 
     /** Screen on keeps the base cadence. With the screen off and the plan
      * stable, back off geometrically; screen-on and every event reconcile at once. */
-    fun interval(interactive: Boolean): Long {
-        if (interactive || stableSamples < 2) return baseIntervalMs
-        return minOf(maxIntervalMs, baseIntervalMs shl minOf(stableSamples - 1, 8))
+    fun interval(interactive: Boolean, now: Long): Long {
+        val cadence = if (interactive || stableSamples < 2) baseIntervalMs
+            else minOf(maxIntervalMs, baseIntervalMs shl minOf(stableSamples - 1, 8))
+        // A callback just before the forced pass must not postpone that pass
+        // by starting a fresh, full maintenance interval.
+        val untilForced = if (syncedRoutes == null) cadence else (forceAfterMs - (now - syncedAt)).coerceAtLeast(1L)
+        return minOf(cadence, untilForced)
     }
 }

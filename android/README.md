@@ -1,6 +1,6 @@
 # TierNest Android App
 
-**0.2.0-rc02 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
+**0.2.0-rc03 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
@@ -30,7 +30,8 @@ Root 模式可选择让 Wi-Fi 热点设备单向访问组网。
 - **启停**：前台通知、通知停止、快捷磁贴，手动断开优先于网络回调及开机恢复。
 - **省电选项**：默认关闭的锁屏暂停与开机恢复；锁屏暂停会中断传输，亮屏重新连接。
   Root 模式另支持已验证家庭 Wi-Fi 的事件/定时检测待机，HTTP 默认 30 秒。
-- 概览/节点可见时才连续采样；后台连接每 60 秒维护动态路由。
+- 概览/节点可见时才连续采样；后台连接维护间隔在息屏且路由稳定时最长为 5 分钟，
+  网络、热点和用户操作会立即触发协调；非定时 HTTP 模式的 Root 路由至少每 5 分钟核对一次。
   事件家庭待机不安排重复 HTTP，手动停止退出服务。不持有唤醒锁或唤醒闹钟。
 
 ## 安装使用
@@ -169,8 +170,8 @@ sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-CI 模式输出 `dist/TierNest-CI-v0.2.0-rc02-ci.apk`；维护者发布模式输出
-`dist/TierNest-App-v0.2.0-rc02.apk`。上游下载、Cargo 依赖、工具版本和
+CI 模式输出 `dist/TierNest-CI-v0.2.0-rc03-ci.apk`；维护者发布模式输出
+`dist/TierNest-App-v0.2.0-rc03.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
 候选包采用 Release 优化且不可调试。维护者包保留已发布 APK 的签名身份，私钥现由

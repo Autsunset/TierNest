@@ -11,10 +11,10 @@ spec.loader.exec_module(artifact)
 
 class ArtifactTest(unittest.TestCase):
     def errors(self, mode='release', **changes):
-        data = dict(package='com.tiernest.app', version='0.2.0-rc02', code=12, signer='release-cert', debuggable=False)
-        if mode == 'ci': data.update(package='com.tiernest.app.ci', version='0.2.0-rc02-ci', signer='ci-cert')
+        data = dict(package='com.tiernest.app', version='0.2.0-rc03', code=13, signer='release-cert', debuggable=False)
+        if mode == 'ci': data.update(package='com.tiernest.app.ci', version='0.2.0-rc03-ci', signer='ci-cert')
         data.update(changes)
-        return artifact.identity_errors(**data, mode=mode, expected_version='0.2.0-rc02', expected_code=12, release_cert='release-cert')
+        return artifact.identity_errors(**data, mode=mode, expected_version='0.2.0-rc03', expected_code=13, release_cert='release-cert')
 
     def test_distribution_identity_and_ci_are_both_valid_but_distinct(self):
         self.assertEqual([], self.errors())
@@ -26,7 +26,7 @@ class ArtifactTest(unittest.TestCase):
     def test_stale_or_relabelled_artifacts_are_rejected(self):
         self.assertTrue(self.errors(version='0.2.0-alpha10'))
         self.assertTrue(self.errors(code=10))
-        self.assertTrue(self.errors('ci', version='0.2.0-rc02'))
+        self.assertTrue(self.errors('ci', version='0.2.0-rc03'))
         self.assertTrue(self.errors(debuggable=True))
 
     def elf(self, alignment=16384, offset=0, address=0):
