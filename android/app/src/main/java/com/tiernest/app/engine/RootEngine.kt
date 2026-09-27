@@ -2,6 +2,7 @@ package com.tiernest.app.engine
 
 import android.content.Context
 import com.tiernest.app.data.ConfigCodec
+import com.tiernest.app.data.RootPeerBootstrap
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -72,8 +73,8 @@ class RootEngine(private val context: Context, private val diagnostics: AppDiagn
     suspend fun start(config: String, owner: String) = command(retain = true) {
         if (connectionOwner != null && connectionOwner != owner) it.call("stop")
         connectionOwner = owner
-        File(stage, "effective.toml").writeText(ConfigCodec.effective(config,
-            defaultHostname = com.tiernest.app.data.DeviceName.current(context)))
+        File(stage, "effective.toml").writeText(RootPeerBootstrap.augment(ConfigCodec.effective(config,
+            defaultHostname = com.tiernest.app.data.DeviceName.current(context))))
         File(stage, "hotspot-proxies").writeText(ConfigCodec.form(config).subnets + "\n")
         it.call("start")
     }
