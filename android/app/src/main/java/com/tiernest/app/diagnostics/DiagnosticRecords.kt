@@ -16,10 +16,17 @@ enum class LogEvent {
 }
 
 enum class RootCommandPhase { QUEUED, WRITING, WAITING_REPLY, READING_REPLY, REPLY_COMPLETE }
+enum class RootCommandStage {
+    RECEIVED, START_CHECK, CONFIG_CHECK, RPC_SETUP, CORE_LAUNCH,
+    ROUTE_VALIDATE, ROUTE_SNAPSHOT, ROUTE_APPLY, ROUTE_RULE, CLEANUP
+}
+enum class RootFailureKind { TIMEOUT, OPERATION, TRANSPORT, PROTOCOL }
 
 /** Fixed fields only; never carries a command payload or response text. */
 data class RootCommandTiming(val phase: RootCommandPhase, val awakeMs: Long, val realtimeMs: Long,
-                             val writeMs: Long?, val firstLineMs: Long?, val processAlive: Boolean)
+                             val writeMs: Long?, val firstLineMs: Long?, val processAlive: Boolean,
+                             val stage: RootCommandStage? = null, val stageMs: Long? = null,
+                             val failureKind: RootFailureKind? = null)
 
 /** No Throwable.message/toString, configuration, addresses or pipe contents.
  * Stack frames are enough to locate the failing code without echoing input. */
@@ -46,6 +53,9 @@ object DiagnosticRecords {
             it.writeMs?.let { ms -> append(" write_ms=").append(ms.coerceAtLeast(0)) }
             it.firstLineMs?.let { ms -> append(" first_line_ms=").append(ms.coerceAtLeast(0)) }
             append(" process_alive=").append(it.processAlive)
+            it.stage?.let { stage -> append(" stage=").append(stage.name) }
+            it.stageMs?.let { ms -> append(" stage_ms=").append(ms.coerceAtLeast(0)) }
+            it.failureKind?.let { kind -> append(" failure_kind=").append(kind.name) }
         }
         append('\n')
         if (error != null) {

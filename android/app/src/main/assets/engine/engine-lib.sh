@@ -3,6 +3,13 @@
 
 fail() { printf '%s\n' "$*" >&2; return 1; }
 
+# Fixed protocol markers only. Helpers also run in isolated tests without a
+# command owner; never print an interface, destination or configuration here.
+command_stage() {
+    [ -n "${TN_ACTIVE_REQUEST:-}" ] || return 0
+    printf '__TN_STAGE_%s:%s\n' "$TN_ACTIVE_REQUEST" "$1"
+}
+
 # The upstream RPC is unauthenticated. Only root-owned local clients may reach
 # it; all app RPC calls run inside this su session. Fail closed if unavailable.
 protect_rpc() {
@@ -116,47 +123,91 @@ allocate_routes() {
 }
 
 sync_routes() {
+    command_stage ROUTE_VALIDATE
     core_alive || { fail 'Core is not running'; return 1; }
     ip link show dev tiernest0 >/dev/null 2>&1 || { fail 'Waiting for tiernest0'; return 1; }
     [ -s "$TN_STAGE/routes.txt" ] || { fail 'No overlay routes available'; return 1; }
-    while IFS= read -r tn_cidr; do
-        valid_cidr "$tn_cidr" || { fail 'Rejected unsafe overlay route'; return 1; }
-    done < "$TN_STAGE/routes.txt"
+    awk '{
+        if (split($0, a, "/") != 2 || a[2] !~ /^[0-9]+$/ || a[2] < 8 || a[2] > 32) exit 1
+        if (split(a[1], o, ".") != 4) exit 1
+        for (i=1;i<=4;i++) if (o[i] !~ /^[0-9]+$/ || o[i] > 255) exit 1
+        if (o[1] == 0 || o[1] == 127 || o[1] >= 224 || (o[1] == 169 && o[2] == 254)) exit 1
+    }' "$TN_STAGE/routes.txt" || { fail 'Rejected unsafe overlay route'; return 1; }
     allocate_routes || return 1
+    command_stage ROUTE_SNAPSHOT
     # A foreign default route appearing in our table would capture normal VPN
     # traffic through the lookup rule. Withdraw our rule instead of using it.
-    ip -4 route show table "$tn_table" 2>/dev/null | awk '{print $1}' > "$TN_RUN/actual"
-    while IFS= read -r tn_cidr; do
-        case "$tn_cidr" in */*) ;; *) tn_cidr="$tn_cidr/32";; esac
-        if ! grep -Fxq "$tn_cidr" "$TN_RUN/routes" 2>/dev/null; then
-            cleanup_routes; fail 'Foreign route appeared in the TierNest table'; return 1
-        fi
-    done < "$TN_RUN/actual"
-    sort -u "$TN_STAGE/routes.txt" > "$TN_RUN/desired"
+    ip -4 route show table "$tn_table" > "$TN_RUN/actual" 2>/dev/null || return 1
+    ip -o -4 addr show dev tiernest0 > "$TN_RUN/address" || return 1
+    tn_ip=$(awk 'NR==1{split($4,a,"/"); print a[1]}' "$TN_RUN/address")
+    [ -n "$tn_ip" ] || return 1
+    sort -u "$TN_STAGE/routes.txt" > "$TN_RUN/desired" || return 1
+    # One kernel snapshot and one awk process replace per-route lookups. The
+    # forced integrity pass still checks every route's owner and source address.
+    awk -v journal="$TN_RUN/routes" -v desired="$TN_RUN/desired" -v source="$tn_ip" '
+        BEGIN {
+            while ((getline c < journal) > 0) owned[c]=1
+            close(journal)
+            while ((getline c < desired) > 0) wanted[c]=1
+            close(desired)
+        }
+        {
+            c=$1; first=2
+            if (c == "unicast") { c=$2; first=3 }
+            if (c !~ /\//) c=c "/32"
+            dev=""; proto=""; src=""; via=0
+            for (i=first;i<=NF;i++) {
+                if ($i == "dev") dev=$(i+1)
+                if ($i == "proto") proto=$(i+1)
+                if ($i == "src") src=$(i+1)
+                if ($i == "via") via=1
+            }
+            if (!owned[c] || dev != "tiernest0" || proto != "186" || via || seen[c]++) { bad=1; exit 1 }
+            if (wanted[c] && src != source) repair[c]=1
+        }
+        END {
+            if (bad) exit 1
+            for (c in wanted) {
+                if (!seen[c]) print "ADD", c
+                else if (repair[c]) print "REPAIR", c
+            }
+            for (c in seen) if (!wanted[c]) print "DELETE", c
+        }
+    ' "$TN_RUN/actual" > "$TN_RUN/changes" || {
+        cleanup_routes; fail 'Foreign route appeared in the TierNest table'; return 1
+    }
     # Publish all attempted additions before mutations, for crash recovery.
     cat "$TN_RUN/routes" "$TN_RUN/desired" 2>/dev/null | sort -u > "$TN_RUN/journal.new"
-    mv "$TN_RUN/journal.new" "$TN_RUN/routes"
-    tn_ip=$(ip -o -4 addr show dev tiernest0 | awk 'NR==1{split($4,a,"/"); print a[1]}')
-    [ -n "$tn_ip" ] || return 1
+    mv "$TN_RUN/journal.new" "$TN_RUN/routes" || return 1
+    command_stage ROUTE_APPLY
     tn_failed=0
-    while IFS= read -r tn_cidr; do
-        if grep -Fxq "$tn_cidr" "$TN_RUN/desired"; then
-            tn_existing=$(ip -4 route show table "$tn_table" exact "$tn_cidr" 2>/dev/null)
-            if [ -n "$tn_existing" ] && ! ip -4 route show table "$tn_table" exact "$tn_cidr" proto 186 | grep -Eq 'dev tiernest0([[:space:]]|$)'; then
-                fail 'Routing table changed by another owner'; tn_failed=1; break
-            fi
-            ip -4 route replace table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 src "$tn_ip" || tn_failed=1
-        else
-            tn_existing=$(ip -4 route show table "$tn_table" exact "$tn_cidr" proto 186 2>/dev/null)
-            if printf '%s\n' "$tn_existing" | grep -Eq 'dev tiernest0([[:space:]]|$)'; then
-                ip -4 route del table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 || tn_failed=1
-            fi
-        fi
-    done < "$TN_RUN/routes"
+    while read -r tn_change tn_cidr; do
+        case "$tn_change" in
+            ADD)
+                # add refuses a conflicting route created after the snapshot.
+                ip -4 route add table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 src "$tn_ip" || tn_failed=1;;
+            REPAIR)
+                tn_existing=$(ip -4 route show table "$tn_table" exact "$tn_cidr" 2>/dev/null) || { tn_failed=1; break; }
+                if ! printf '%s\n' "$tn_existing" | grep -Eq 'dev tiernest0([[:space:]]|$)' ||
+                    ! printf '%s\n' "$tn_existing" | grep -Eq 'proto 186([[:space:]]|$)'; then
+                    tn_failed=1; break
+                fi
+                ip -4 route replace table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 src "$tn_ip" || tn_failed=1;;
+            DELETE)
+                tn_existing=$(ip -4 route show table "$tn_table" exact "$tn_cidr" proto 186 2>/dev/null) || { tn_failed=1; break; }
+                if printf '%s\n' "$tn_existing" | grep -Eq 'dev tiernest0([[:space:]]|$)'; then
+                    ip -4 route del table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 || tn_failed=1
+                fi;;
+            *) tn_failed=1; break;;
+        esac
+        [ "$tn_failed" = 0 ] || break
+    done < "$TN_RUN/changes"
     if [ "$tn_failed" != 0 ]; then cleanup_routes; return 1; fi
-    cp "$TN_RUN/desired" "$TN_RUN/routes"
-    if ! ip -4 rule show | grep -Eq "^[[:space:]]*$tn_pref:.*lookup $tn_table([[:space:]]|$)"; then
-        if ip -4 rule show | grep -Eq "^[[:space:]]*$tn_pref:"; then
+    cp "$TN_RUN/desired" "$TN_RUN/routes" || return 1
+    command_stage ROUTE_RULE
+    ip -4 rule show > "$TN_RUN/rules.actual" || return 1
+    if ! grep -Eq "^[[:space:]]*$tn_pref:.*lookup $tn_table([[:space:]]|$)" "$TN_RUN/rules.actual"; then
+        if grep -Eq "^[[:space:]]*$tn_pref:" "$TN_RUN/rules.actual"; then
             cleanup_routes; fail 'Rule priority changed by another owner'; return 1
         fi
         ip -4 rule add pref "$tn_pref" lookup "$tn_table" || { cleanup_routes; return 1; }
@@ -187,18 +238,22 @@ check_modules() {
 
 start_core() {
     core_alive && return 0
+    command_stage START_CHECK
     check_modules || return 1
     ip link show dev tiernest0 >/dev/null 2>&1 && { fail 'tiernest0 already exists; stop the other instance'; return 1; }
     [ -c /dev/net/tun ] || [ -c /dev/tun ] || { fail 'TUN device unavailable'; return 1; }
+    command_stage CONFIG_CHECK
     timeout 10 "$TN_ROOT/bin/easytier-core" --check-config -c "$TN_STAGE/effective.toml" >/dev/null 2>&1 || {
         fail 'EasyTier rejected the configuration'; return 1;
     }
     cp "$TN_STAGE/effective.toml" "$TN_ROOT/effective.toml.new" &&
         mv "$TN_ROOT/effective.toml.new" "$TN_ROOT/effective.toml" || return 1
+    command_stage RPC_SETUP
     protect_rpc || return 1
     # Suppress startup TOML dumps. Let the core rotate its own bounded error logs
     # even while Android freezes the UI; never kill the network for a full log.
     mkdir -p "$TN_ROOT/logs" || return 1
+    command_stage CORE_LAUNCH
     "$TN_ROOT/bin/easytier-core" -c "$TN_ROOT/effective.toml" \
         --rpc-portal 127.0.0.1:15888 --rpc-portal-whitelist 127.0.0.1/32 \
         --console-log-level off --file-log-level error --file-log-dir "$TN_ROOT/logs" --file-log-size 1 --file-log-count 2 \

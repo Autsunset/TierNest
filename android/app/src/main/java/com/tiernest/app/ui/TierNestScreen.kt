@@ -56,8 +56,12 @@ import kotlinx.coroutines.launch
     }
     val importFile = rememberConfigurationImport(model) { navigate(2) }
     LaunchedEffect(message) { if (message.isNotBlank()) { snackbar.showSnackbar(message); if (model.message.value == message) model.message.value = "" } }
-    LaunchedEffect(pager.settledPage) { model.selectedPage = pager.settledPage; app.uiDataVisible.value = pager.settledPage < 2 }
-    DisposableEffect(app) { onDispose { app.uiDataVisible.value = false } }
+    LaunchedEffect(pager.settledPage) {
+        model.selectedPage = pager.settledPage
+        app.uiPeersVisible.value = pager.settledPage == 1
+        app.uiDataVisible.value = pager.settledPage < 2
+    }
+    DisposableEffect(app) { onDispose { app.uiDataVisible.value = false; app.uiPeersVisible.value = false } }
     androidx.activity.compose.BackHandler(pager.currentPage != 0 && !(pager.currentPage == 3 && settingsOpen)) { navigate(0) }
     AmbientBackground(Modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface,

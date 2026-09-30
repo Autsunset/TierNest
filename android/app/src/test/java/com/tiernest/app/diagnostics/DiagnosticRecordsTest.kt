@@ -15,6 +15,15 @@ class DiagnosticRecordsTest {
         assertFalse(record.contains("do not export this payload"))
     }
 
+    @Test fun shellStageAndFailureClassificationDoNotExportPayloads() {
+        val record = DiagnosticRecords.entry(LogEvent.ROOT_COMMAND_FAILED,
+            IllegalStateException("synthetic-secret"), action = "sync",
+            root = RootCommandTiming(RootCommandPhase.READING_REPLY, 25_000, 25_001, 1, 2, true,
+                RootCommandStage.ROUTE_SNAPSHOT, 3, RootFailureKind.TIMEOUT))
+        assertTrue(record.contains("stage=ROUTE_SNAPSHOT stage_ms=3 failure_kind=TIMEOUT"))
+        assertFalse(record.contains("synthetic-secret"))
+    }
+
     @Test fun exceptionsKeepFramesButNeverEchoSecretsOrAddresses() {
         val sensitive = "secret-fixture tcp://peer.example.invalid:1234 192.0.2.99 network_name=private-name"
         val cause = IllegalArgumentException(sensitive)

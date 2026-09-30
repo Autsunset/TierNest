@@ -2,6 +2,8 @@ package com.tiernest.app.engine
 
 import com.tiernest.app.diagnostics.RootCommandPhase
 import com.tiernest.app.diagnostics.RootCommandTiming
+import com.tiernest.app.diagnostics.RootCommandStage
+import com.tiernest.app.diagnostics.RootFailureKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import org.junit.Assert.*
@@ -20,10 +22,11 @@ class RootCommandTransportTest {
         val records = mutableListOf<Record>()
         var flush: (String) -> Unit = {}
         var report: (Record) -> Unit = {}
+        var read: suspend () -> String? = { lines.receiveCatching().getOrThrow() }
         val writer = object : StringWriter() {
             override fun flush() { val command = toString(); buffer.setLength(0); flush(command.substringBefore(' ')) }
         }
-        val transport = RootCommandTransport(writer, { lines.receiveCatching().getOrThrow() }, { true },
+        val transport = RootCommandTransport(writer, { read() }, { true },
             { System.nanoTime() / 1_000_000 }, { _, error, code, timing ->
                 Record(error, code, timing).let { records.add(it); report(it) }
             }, timeout)
@@ -82,9 +85,87 @@ class RootCommandTransportTest {
         val f = Fixture()
         f.flush = { f.lines.trySend("__TN_DONE_$it:1") }
         assertTrue(runCatching { f.transport.call("probe") }.exceptionOrNull() is RootOperationException)
+        assertEquals(1, f.records.size)
+        assertTrue(f.records.single().error is RootOperationException)
+        assertEquals(1, f.records.single().code)
+        assertEquals(RootFailureKind.OPERATION, f.records.single().timing.failureKind)
         assertEquals(RootCommandPhase.REPLY_COMPLETE, f.records.last().timing.phase)
         f.flush = { f.lines.trySend("alive=1"); f.lines.trySend("__TN_DONE_$it:0") }
         assertEquals("alive=1", f.transport.call("status"))
+    }
+
+    @Test fun completeReplyWinsItsOwnDeadlineWithoutLoggingContradictoryResults() = runBlocking {
+        val f = Fixture(40)
+        var token = ""
+        f.flush = { token = it }
+        f.read = {
+            // Model a descheduled/blocking reader: cancellation is delivered
+            // while it consumes the complete frame, before returning the value.
+            Thread.sleep(150)
+            "__TN_DONE_$token:0"
+        }
+        assertEquals("", f.transport.call("start"))
+        assertEquals(1, f.records.size)
+        assertNull(f.records.single().error)
+        assertEquals(0, f.records.single().code)
+        assertEquals(RootCommandPhase.REPLY_COMPLETE, f.records.single().timing.phase)
+    }
+
+    @Test fun completeOperationErrorAtDeadlineRemainsAnOperationError() = runBlocking {
+        val f = Fixture(40)
+        var token = ""
+        f.flush = { token = it }
+        f.read = { Thread.sleep(150); "__TN_DONE_$token:7" }
+        assertTrue(runCatching { f.transport.call("validate") }.exceptionOrNull() is RootOperationException)
+        assertEquals(1, f.records.size)
+        assertEquals(7, f.records.single().code)
+        assertEquals(RootFailureKind.OPERATION, f.records.single().timing.failureKind)
+    }
+
+    @Test fun parentStopWinsEvenWhenACompleteReplyArrives() = runBlocking {
+        val f = Fixture(10_000)
+        val reading = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        var token = ""
+        f.flush = { token = it }
+        f.read = { reading.countDown(); check(release.await(3, TimeUnit.SECONDS)); "__TN_DONE_$token:0" }
+        val work = async { f.transport.call("start") }
+        yield()
+        assertTrue(reading.await(3, TimeUnit.SECONDS))
+        work.cancel()
+        release.countDown()
+        work.join()
+        assertTrue(work.isCancelled)
+        assertTrue(f.records.isEmpty())
+    }
+
+    @Test fun stageFramesAreNotPayloadAndLastStageSurvivesATimeout() = runBlocking {
+        val f = Fixture(100)
+        f.flush = { token ->
+            f.lines.trySend("__TN_STAGE_$token:RECEIVED")
+            f.lines.trySend("__TN_STAGE_$token:ROUTE_SNAPSHOT")
+        }
+        assertTrue(runCatching { f.transport.call("sync") }.exceptionOrNull() is RootCommandTimeoutException)
+        val trace = f.records.single().timing
+        assertEquals(RootCommandStage.ROUTE_SNAPSHOT, trace.stage)
+        assertNotNull(trace.stageMs)
+        assertEquals(RootFailureKind.TIMEOUT, trace.failureKind)
+        val healthy = Fixture()
+        healthy.flush = { token ->
+            healthy.lines.trySend("__TN_STAGE_$token:RECEIVED")
+            healthy.lines.trySend("alive=1")
+            healthy.lines.trySend("__TN_DONE_$token:0")
+        }
+        assertEquals("alive=1", healthy.transport.call("status"))
+        assertTrue(healthy.records.isEmpty())
+    }
+
+    @Test fun unknownStageIsAProtocolFailure() = runBlocking {
+        val f = Fixture()
+        f.flush = { f.lines.trySend("__TN_STAGE_$it:private-payload") }
+        assertNotNull(runCatching { f.transport.call("sync") }.exceptionOrNull())
+        assertEquals(RootFailureKind.PROTOCOL, f.records.single().timing.failureKind)
+        assertNull(f.records.single().timing.stage)
     }
 
     @Test fun malformedCompletionIsNotReportedAsSuccessful() = runBlocking {

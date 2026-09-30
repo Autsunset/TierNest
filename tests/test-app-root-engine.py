@@ -26,6 +26,7 @@ def val(key): return a[a.index(key)+1]
 if a[:2] == ['link', 'show']: done()
 if '-o' in a and 'addr' in a: done(output='7: tiernest0 inet 10.77.0.2/24 scope global tiernest0')
 if a[:2] == ['rule', 'show']:
+    if os.environ.get('FAIL_RULE_READ'): done(1)
     done(output='\n'.join(f"{r[0]}: from all lookup {r[1]}" for r in s['rules']))
 if a[:2] == ['rule', 'add']:
     if os.environ.get('FAIL_RULE'): done(1)
@@ -38,18 +39,24 @@ if a[:1] == ['route']:
     table=val('table')
     routes=s['routes'].setdefault(table, {})
     if a[1] == 'show':
+        if os.environ.get('FAIL_ROUTE_READ') and 'exact' not in a: done(1)
         out=[]
         for cidr, spec in routes.items():
             if 'exact' in a and val('exact') != cidr: continue
             if 'proto' in a and val('proto') != spec['proto']: continue
-            out.append(f"{cidr} dev {spec['dev']} proto {spec['proto']} scope link")
+            src=f" src {spec['src']}" if spec.get('src') else ''
+            out.append(f"{cidr} dev {spec['dev']} proto {spec['proto']} scope link{src}")
         done(output='\n'.join(out))
     cidr=a[a.index('table')+2]
-    if a[1] == 'replace':
+    if a[1] in ['replace', 'add']:
         if os.environ.get('FAIL_CIDR') == cidr: done(1)
-        routes[cidr]={'dev':val('dev'),'proto':val('proto')}; done()
+        if a[1] == 'add':
+            if os.environ.get('RACE_CIDR') == cidr:
+                routes[cidr]={'dev':'foreign0','proto':'static'}; done(2)
+            if cidr in routes: done(2)
+        routes[cidr]={'dev':val('dev'),'proto':val('proto'),'src':val('src')}; done()
     if a[1] == 'del':
-        if cidr in routes and routes[cidr] == {'dev':val('dev'),'proto':val('proto')}:
+        if cidr in routes and routes[cidr]['dev'] == val('dev') and routes[cidr]['proto'] == val('proto'):
             del routes[cidr]; done()
         done(2)
 done(5, 'Unexpected mock ip command: ' + repr(a))
@@ -141,6 +148,50 @@ class EngineTest(unittest.TestCase):
             (self.root / 'stage/routes.txt').write_text(cidr + '\n')
             self.assertNotEqual(self.run_shell('sync_routes').returncode, 0, cidr)
         self.assertFalse(any('add' in c or 'replace' in c for c in self.state()['calls']))
+
+    def test_unchanged_integrity_pass_reads_one_snapshot_and_performs_no_route_writes(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state(); state['calls'] = []; self.write_state(state)
+        result = self.run_shell('sync_routes')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.state()['calls']
+        self.assertEqual(sum(c[:3] == ['-4', 'route', 'show'] for c in calls), 1)
+        self.assertEqual(sum(c[:3] == ['-4', 'rule', 'show'] for c in calls), 1)
+        self.assertFalse(any(c[:3] in [['-4', 'route', 'add'], ['-4', 'route', 'replace'], ['-4', 'route', 'del']] for c in calls))
+
+    def test_missing_route_and_wrong_source_are_repaired_without_rewriting_healthy_routes(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state(); state['calls'] = []
+        del state['routes']['20111']['198.51.100.0/24']
+        state['routes']['20111']['10.77.0.0/24']['src'] = '10.77.0.99'
+        self.write_state(state)
+        result = self.run_shell('sync_routes')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        routes = self.state()['routes']['20111']
+        self.assertEqual(routes['10.77.0.0/24']['src'], '10.77.0.2')
+        self.assertEqual(routes['198.51.100.0/24']['src'], '10.77.0.2')
+        calls = self.state()['calls']
+        self.assertEqual(sum(c[:3] == ['-4', 'route', 'add'] for c in calls), 1)
+        self.assertEqual(sum(c[:3] == ['-4', 'route', 'replace'] for c in calls), 1)
+
+    def test_conflicting_add_after_snapshot_is_never_overwritten(self):
+        result = self.run_shell('sync_routes', extra={'RACE_CIDR': '198.51.100.0/24'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state()['routes']['20111']['198.51.100.0/24'], {'dev': 'foreign0', 'proto': 'static'})
+        self.assertNotIn([9979, 20111], self.state()['rules'])
+
+    def test_snapshot_errors_are_not_treated_as_an_empty_healthy_table(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        for flag in ['FAIL_ROUTE_READ', 'FAIL_RULE_READ']:
+            self.assertNotEqual(self.run_shell('sync_routes', extra={flag: '1'}).returncode, 0)
+
+    def test_stage_markers_use_fixed_names_without_route_payloads(self):
+        result = self.run_shell('TN_ACTIVE_REQUEST=abc123; command_stage RECEIVED; sync_routes')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [
+            '__TN_STAGE_abc123:RECEIVED', '__TN_STAGE_abc123:ROUTE_VALIDATE',
+            '__TN_STAGE_abc123:ROUTE_SNAPSHOT', '__TN_STAGE_abc123:ROUTE_APPLY', '__TN_STAGE_abc123:ROUTE_RULE'])
+        self.assertNotIn('10.77.', result.stdout)
 
     def test_cleanup_preserves_replaced_rule_and_route(self):
         self.assertEqual(self.run_shell('sync_routes').returncode, 0)

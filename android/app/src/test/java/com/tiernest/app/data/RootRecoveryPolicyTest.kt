@@ -11,7 +11,6 @@ class RootRecoveryPolicyTest {
 
     @Test fun manualStopWinsEvenWhenCleanupFailedOrTimedOut() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         for (cleanup in listOf(false, true)) for (timeout in listOf(false, true))
             for (changed in listOf(false, true)) for (standby in listOf(false, true))
                 assertEquals(RecoveryDecision.STOPPED,
@@ -20,26 +19,25 @@ class RootRecoveryPolicyTest {
         assertEquals(RecoveryDecision.RETRY, decide(policy))
     }
 
-    @Test fun neverEstablishedRootDoesNotAutoRetry() {
-        assertEquals(RecoveryDecision.FAILED, decide(RootRecoveryPolicy()))
-        val vpnOnly = RootRecoveryPolicy()
-        vpnOnly.connected(ConnectionMode.VPN)
-        assertEquals(RecoveryDecision.FAILED, decide(vpnOnly))
-    }
-
-    @Test fun firstTimeoutAfterRootReadyRetriesExactlyOnce() {
+    @Test fun firstStartTimeoutRetriesOnceWithoutRequiringAnEarlierConnection() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RETRY, decide(policy))
         policy.starting(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.FAILED, decide(policy))
-        policy.connected(ConnectionMode.ROOT)
+        assertEquals(RecoveryDecision.FAILED, decide(RootRecoveryPolicy(), rootTimeout = false))
+    }
+
+    @Test fun repeatedTimeoutsDoNotReplenishTheSingleRetry() {
+        val policy = RootRecoveryPolicy()
+        assertEquals(RecoveryDecision.RETRY, decide(policy))
+        policy.starting(ConnectionMode.ROOT)
+        assertEquals(RecoveryDecision.FAILED, decide(policy))
+        policy.reconcile(DesiredConnection.CONNECTED)
         assertEquals(RecoveryDecision.FAILED, decide(policy))
     }
 
     @Test fun vpnFailuresAndNonTimeoutErrorsNeverRetry() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.FAILED, decide(policy, mode = ConnectionMode.VPN, failedMode = ConnectionMode.VPN))
         assertEquals(RecoveryDecision.FAILED, decide(policy, rootTimeout = false))
         assertEquals(RecoveryDecision.FAILED, decide(policy, failedMode = null))
@@ -48,14 +46,12 @@ class RootRecoveryPolicyTest {
 
     @Test fun failedCleanupNeverRetries() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.FAILED, decide(policy, cleanupSucceeded = false))
         assertEquals(RecoveryDecision.RETRY, decide(policy))
     }
 
     @Test fun newRequestOrModeSwitchReconcilesInsteadOfOverwritingUserIntent() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RECONCILE, decide(policy, requestChanged = true))
         assertEquals(RecoveryDecision.RECONCILE, decide(policy, mode = ConnectionMode.VPN, failedMode = ConnectionMode.ROOT))
         assertEquals(RecoveryDecision.RETRY, decide(policy))
@@ -63,7 +59,6 @@ class RootRecoveryPolicyTest {
 
     @Test fun standbyReconcilesWithoutSpendingTheSingleRetry() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RECONCILE, decide(policy, standby = true))
         assertEquals(RecoveryDecision.RETRY, decide(policy))
         policy.starting(ConnectionMode.ROOT)
@@ -73,12 +68,10 @@ class RootRecoveryPolicyTest {
 
     @Test fun freshServiceLifetimeReceivesOneNewRetryBudget() {
         val first = RootRecoveryPolicy()
-        first.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RETRY, decide(first))
         first.starting(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.FAILED, decide(first))
         val second = RootRecoveryPolicy()
-        second.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RETRY, decide(second))
         second.starting(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.FAILED, decide(second))
@@ -87,12 +80,11 @@ class RootRecoveryPolicyTest {
     @Test fun homeOrScreenStandbyDuringBackoffDoesNotSpendRetryBudget() {
         for (standby in listOf(DesiredConnection.HOME_STANDBY, DesiredConnection.SCREEN_STANDBY)) {
             val policy = RootRecoveryPolicy()
-            policy.connected(ConnectionMode.ROOT)
             assertEquals(RecoveryDecision.RETRY, decide(policy))
             policy.reconcile(standby)
             policy.reconcile(DesiredConnection.CONNECTED)
             policy.starting(ConnectionMode.ROOT) // Normal home-away/screen-on start.
-            policy.connected(ConnectionMode.ROOT)
+
             assertEquals(RecoveryDecision.RETRY, decide(policy))
             policy.starting(ConnectionMode.ROOT) // This recovery really runs.
             assertEquals(RecoveryDecision.FAILED, decide(policy))
@@ -101,7 +93,6 @@ class RootRecoveryPolicyTest {
 
     @Test fun stopOrModeSwitchDuringBackoffCannotConsumeRootRetry() {
         val policy = RootRecoveryPolicy()
-        policy.connected(ConnectionMode.ROOT)
         assertEquals(RecoveryDecision.RETRY, decide(policy))
         policy.reconcile(DesiredConnection.STOPPED)
         policy.starting(ConnectionMode.ROOT)

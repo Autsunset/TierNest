@@ -5,11 +5,8 @@ enum class RecoveryDecision { STOPPED, RECONCILE, RETRY, FAILED }
 /** Main-thread/controller-lock confined. At most one automatic retry during a
  * service lifetime; settings/network events never replenish the budget. */
 class RootRecoveryPolicy {
-    private var rootWasReady = false
     private var retryUsed = false
     private var retryPending = false
-
-    fun connected(mode: ConnectionMode) { if (mode == ConnectionMode.ROOT) rootWasReady = true }
 
     fun reconcile(desired: DesiredConnection) {
         if (desired != DesiredConnection.CONNECTED) retryPending = false
@@ -29,7 +26,7 @@ class RootRecoveryPolicy {
         if (!requested) return RecoveryDecision.STOPPED
         if (!cleanupSucceeded) return RecoveryDecision.FAILED
         if (requestChanged || (failedMode != null && failedMode != currentMode)) return RecoveryDecision.RECONCILE
-        if (!rootTimeout || failedMode != ConnectionMode.ROOT || !rootWasReady) return RecoveryDecision.FAILED
+        if (!rootTimeout || failedMode != ConnectionMode.ROOT) return RecoveryDecision.FAILED
         // Lock-screen pause is a user policy, not a failed reconnect attempt.
         if (standby) return RecoveryDecision.RECONCILE
         if (retryUsed) return RecoveryDecision.FAILED

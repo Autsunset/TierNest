@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import time
 
@@ -31,7 +32,11 @@ def main():
     adb = [str(sdk / 'platform-tools/adb'), '-s', args.serial]
 
     def shell(command):
-        return subprocess.check_output(adb + ['shell', command], text=True, timeout=8).strip()
+        # Android 16 restricts shell's access to another UID's /proc/fd. The
+        # runner already requires an authorized rooted test device; don't turn
+        # an unreadable descriptor directory into a misleading zero count.
+        return subprocess.check_output(adb + ['shell', 'su 0 sh -c ' + shlex.quote(command)],
+            text=True, timeout=8).strip()
 
     samples = []
     started = time.monotonic()
@@ -56,7 +61,7 @@ def main():
             try:
                 pid = int(shell('pidof ' + args.package).split()[0])
                 status = shell(f'cat /proc/{pid}/status')
-                sample.update(pid=pid, fds=int(shell(f'ls /proc/{pid}/fd | wc -l')),
+                sample.update(pid=pid, fds=len(shell(f'ls /proc/{pid}/fd').splitlines()),
                     threads=int(re.search(r'^Threads:\s+(\d+)', status, re.M)[1]),
                     rss_kib=int(re.search(r'^VmRSS:\s+(\d+)', status, re.M)[1]))
             except (subprocess.SubprocessError, ValueError, IndexError, TypeError):

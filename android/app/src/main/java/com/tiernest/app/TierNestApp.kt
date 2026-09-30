@@ -29,6 +29,7 @@ class TierNestApp : Application() {
     val dashboard = MutableStateFlow(Dashboard())
     val uiVisible = MutableStateFlow(false)
     val uiDataVisible = MutableStateFlow(false)
+    val uiPeersVisible = MutableStateFlow(false)
     override fun onCreate() {
         super.onCreate()
         diagnostics = AppDiagnostics(this)

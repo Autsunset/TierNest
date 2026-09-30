@@ -15,7 +15,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.tiernest.app.diagnostics.LogEvent
@@ -32,7 +32,11 @@ class ConnectionService : VpnService() {
     private var tetherRegistered = false
     private var eventHealthy = true
     private var signature = ""
-    private var coreActive = false
+    private val coreRunning = MutableStateFlow(false)
+    private var coreActive: Boolean
+        get() = coreRunning.value
+        set(value) { coreRunning.value = value }
+    private val screenInteractive = MutableStateFlow(false)
     private var maintenance: Job? = null
     private var lastSample: Pair<Long, EngineStatus>? = null
     private var currentStartId = 0
@@ -46,18 +50,26 @@ class ConnectionService : VpnService() {
     private var loggedPhase: DesiredConnection? = null
     private val recovery = RootRecoveryPolicy()
     private val maintenancePolicy = RootMaintenancePolicy()
+    private val topologyPolicy = TopologyRefreshPolicy()
+    private data class TopologySample(val cidr: String, val peers: List<Peer>, val plan: RoutePlan,
+                                      val network: NetworkObservation)
+    private var topologySample: TopologySample? = null
     private val externalWakePending = java.util.concurrent.atomic.AtomicBoolean(false)
     // Delivered on the connectivity thread. Signal-strength and metering
     // updates arrive constantly; only changes the reconcile logic can observe
     // (transport, VPN/internet/validated bits, link properties) wake it.
     private val capabilityKeys = java.util.concurrent.ConcurrentHashMap<Network, String>()
+    private val linkPropertyKeys = java.util.concurrent.ConcurrentHashMap<Network, String>()
     private var requestRevision = 0L
     private var operationDesired: DesiredConnection? = null
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { signalEvent() }
-        override fun onLost(network: Network) { capabilityKeys.remove(network); signalEvent() }
-        override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) { signalEvent() }
+        override fun onLost(network: Network) { capabilityKeys.remove(network); linkPropertyKeys.remove(network); signalEvent() }
+        override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) {
+            val key = props.toString() // In-memory equality only; never logged or exported.
+            if (linkPropertyKeys.put(network, key) != key) signalEvent()
+        }
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
             val key = buildString {
                 for (transport in intArrayOf(NetworkCapabilities.TRANSPORT_WIFI, NetworkCapabilities.TRANSPORT_CELLULAR,
@@ -69,7 +81,10 @@ class ConnectionService : VpnService() {
         }
     }
     private val screen = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { signalEvent() }
+        override fun onReceive(context: Context, intent: Intent) {
+            screenInteractive.value = getSystemService(PowerManager::class.java).isInteractive
+            signalEvent()
+        }
     }
     // A cue only: the privileged command independently reads live tether state,
     // so an intent never supplies an interface or a route to install.
@@ -87,6 +102,7 @@ class ConnectionService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         app = application as TierNestApp
+        screenInteractive.value = getSystemService(PowerManager::class.java).isInteractive
         vpnEngine = app.vpnEngine
         activeService = this
         pendingStart = null
@@ -128,13 +144,18 @@ class ConnectionService : VpnService() {
             }
         }
         scope.launch {
-            combine(app.uiVisible, app.uiDataVisible) { visible, dataVisible -> visible && dataVisible }.collectLatest { visible ->
-                if (visible) while (isActive) {
+            uiSamplingRequests(app.uiVisible, app.uiDataVisible, app.uiPeersVisible,
+                screenInteractive, coreRunning).collectLatest { request ->
+                if (!request.active) {
+                    lastSample = null // The next visible tick starts a fresh rate baseline.
+                    return@collectLatest
+                }
+                while (isActive) {
                     if (coreActive && !app.dashboard.value.busy) runCatching { operations.withLock {
                         // Finish the bounded in-flight pipe exchange before pausing
                         // sampling; cancellation must not leave a partial RPC reply.
                         if (coreActive && app.store.load().requested) withContext(NonCancellable) {
-                            attempt { sample() }
+                            attempt { sample(refreshPeers = request.refreshPeers) }
                         }
                     } }
                         .onFailure { if (it !is CancellationException) signalEvent() }
@@ -238,6 +259,7 @@ class ConnectionService : VpnService() {
             }
         } else detector.reset()
         val interactive = getSystemService(PowerManager::class.java).isInteractive
+        screenInteractive.value = interactive
         val desired = ConnectionPolicy.decide(app.store.load().requested, prefs.screenSuspend && screenRegistered,
             interactive, automatic, home, eventHealthy)
         operationDesired = desired
@@ -268,7 +290,7 @@ class ConnectionService : VpnService() {
                 peers = emptyList(), rxRate = 0f, txRate = 0f) }
             notifyState(phase)
         } else {
-            val physical = detector.physicalSignature()
+            val physical = withContext(Dispatchers.IO) { detector.physicalSignature() }
             if (coreActive && (signature != physical || pendingReconnect || runningMode != prefs.connectionMode)) {
                 app.diagnostics.event(LogEvent.NETWORK_CHANGED, mode = runningMode?.name)
                 stopBackend(); coreActive = false; lastSample = null
@@ -309,7 +331,6 @@ class ConnectionService : VpnService() {
                 app.diagnostics.event(LogEvent.CORE_READY, mode = runningMode?.name)
             }
             sample(syncRoutes = true)
-            runningMode?.let(recovery::connected)
             app.dashboard.update { it.copy(phase = "核心运行", detail = if (runningMode == ConnectionMode.VPN)
                 "系统 VPN 组网 · 无需 Root" else "Root 组网 · 可与系统 VPN 共存", busy = false, error = warning) }
             notifyState("核心运行")
@@ -324,15 +345,33 @@ class ConnectionService : VpnService() {
         if (interval != null) maintenance = scope.launch { delay(interval); events.trySend(Unit) }
     }
 
-    private suspend fun sample(syncRoutes: Boolean = false) {
+    private suspend fun sample(syncRoutes: Boolean = false, refreshPeers: Boolean = false) {
         val status = backendStatus()
         check(status.alive) { "核心进程已退出" }
-        val peerJson = if (runningMode == ConnectionMode.VPN) vpnEngine.peers() else app.engine.peers()
-        val network = withContext(Dispatchers.IO) { detector.observe() }
-        val (peers, plan) = withContext(Dispatchers.Default) {
-            val peers = PeerCodec.decode(peerJson)
-            peers to RoutePlanner.plan(status.cidr, peers, network.physicalNetworks)
+        // Finish the in-flight reply on pause, then stop before another peer
+        // query or network scan. Background routing maintenance still runs.
+        if (!syncRoutes && !(app.uiVisible.value && app.uiDataVisible.value && screenInteractive.value)) {
+            lastSample = null
+            return
         }
+        val previous = topologySample
+        if (topologyPolicy.needed(SystemClock.elapsedRealtime(), syncRoutes || refreshPeers || previous?.cidr != status.cidr)) {
+            val peerJson = if (runningMode == ConnectionMode.VPN) vpnEngine.peers() else app.engine.peers()
+            val network = withContext(Dispatchers.IO) { detector.observe() }
+            val (peers, plan) = withContext(Dispatchers.Default) {
+                val peers = PeerCodec.decode(peerJson)
+                peers to RoutePlanner.plan(status.cidr, peers, network.physicalNetworks)
+            }
+            topologySample = TopologySample(status.cidr, peers, plan, network)
+            topologyPolicy.refreshed(SystemClock.elapsedRealtime())
+            // A newly advertised subnet seen by the UI should be applied now,
+            // without waiting for the slower background maintenance cadence.
+            if (!syncRoutes && previous != null && previous.plan.routes != plan.routes) signalEvent()
+        }
+        val topology = checkNotNull(topologySample)
+        val peers = topology.peers
+        val plan = topology.plan
+        val network = topology.network
         var synced = false
         if (syncRoutes) {
             check(plan.routes.isNotEmpty()) { "虚拟网段与物理网络冲突，或没有可用的 IPv4 路由" }
@@ -366,7 +405,7 @@ class ConnectionService : VpnService() {
         val seconds = if (old == null) 0f else (now - old.first) / 1000f
         val rx = if (seconds <= 0 || status.rx < (old?.second?.rx ?: 0)) 0f else (status.rx - (old?.second?.rx ?: status.rx)) / seconds
         val tx = if (seconds <= 0 || status.tx < (old?.second?.tx ?: 0)) 0f else (status.tx - (old?.second?.tx ?: status.tx)) / seconds
-        val sampleVisible = app.uiVisible.value && app.uiDataVisible.value
+        val sampleVisible = app.uiVisible.value && app.uiDataVisible.value && screenInteractive.value
         lastSample = if (sampleVisible) now to status else null
         val routing = if (synced) backendStatus() else status
         if (routing.hotspot != app.dashboard.value.hotspot) {
@@ -385,6 +424,8 @@ class ConnectionService : VpnService() {
     private suspend fun stopBackend() {
         coreActive = false
         lastSample = null
+        topologyPolicy.reset()
+        topologySample = null
         maintenancePolicy.reset()
         if (runningMode != null) app.diagnostics.event(LogEvent.CORE_STOP, mode = runningMode?.name)
         when (runningMode) {

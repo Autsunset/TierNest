@@ -50,8 +50,12 @@ fi
 printf '__TN_READY__\n'
 while IFS=' ' read -r tn_request tn_action; do
     case "$tn_request" in ''|*[!a-zA-Z0-9]*) break;; esac
+    TN_ACTIVE_REQUEST=$tn_request
+    command_stage RECEIVED
+    [ "$tn_action" != stop ] || command_stage CLEANUP
     dispatch "$tn_action"
     tn_result=$?
+    unset TN_ACTIVE_REQUEST
     printf '\n__TN_DONE_%s:%s\n' "$tn_request" "$tn_result"
 done
 # EOF when the app dies or stops: trap removes the core and owned routes.
