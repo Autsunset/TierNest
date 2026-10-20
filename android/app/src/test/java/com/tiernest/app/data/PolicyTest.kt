@@ -23,7 +23,7 @@ class PolicyTest {
         val peer = Peer("test-node", "10.77.0.8", 1, 4.0, "DIRECT",
             listOf("0.0.0.0/0", "0.0.0.0/1", "128.0.0.0/1", "127.0.0.1/32", "192.0.2.0/24", "198.51.100.0/24", "::/0", "224.0.0.0/4"))
         val plan = RoutePlanner.plan("10.77.0.2/24", listOf(peer), listOf("192.0.2.8/24"))
-        assertEquals(listOf("10.77.0.0/24", "10.77.0.8/32", "198.51.100.0/24"), plan.routes)
+        assertEquals(listOf("10.77.0.0/24", "198.51.100.0/24"), plan.routes)
         assertTrue(plan.excluded.contains("192.0.2.0/24"))
         assertTrue(plan.excluded.contains("::/0"))
     }
@@ -53,5 +53,12 @@ class PolicyTest {
         assertEquals(3.5, peers.first().latency!!, 0.0)
         assertNull(peers.last().latency)
         assertNull(peers.last().hops)
+    }
+
+    @Test fun upstreamMappedProxyTextStaysVisibleButOnlyItsDestinationIsRouted() {
+        val peers = PeerCodec.decode("""[{"hostname":"fixture-proxy","ipv4":"10.77.0.2","path_len":1,"proxy_cidrs":"127.0.0.1/32->198.51.100.9/32,203.0.113.0/24"}]""")
+        assertEquals(listOf("127.0.0.1/32->198.51.100.9/32", "203.0.113.0/24"), peers.single().subnets)
+        assertEquals(listOf("10.77.0.0/24", "198.51.100.9/32", "203.0.113.0/24"),
+            RoutePlanner.plan("10.77.0.1/24", peers, emptyList()).routes)
     }
 }

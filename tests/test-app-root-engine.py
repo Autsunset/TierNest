@@ -27,19 +27,23 @@ if a[:2] == ['link', 'show']: done()
 if '-o' in a and 'addr' in a: done(output='7: tiernest0 inet 10.77.0.2/24 scope global tiernest0')
 if a[:2] == ['rule', 'show']:
     if os.environ.get('FAIL_RULE_READ'): done(1)
-    done(output='\n'.join(f"{r[0]}: from all lookup {r[1]}" for r in s['rules']))
+    done(output='\n'.join(f"{r[0]}: {r[2] if len(r) > 2 else 'from all'} lookup {r[1]}" for r in s['rules']))
 if a[:2] == ['rule', 'add']:
     if os.environ.get('FAIL_RULE'): done(1)
     s['rules'].append([int(val('pref')), int(val('lookup'))]); done()
 if a[:2] == ['rule', 'del']:
     rule=[int(val('pref')), int(val('lookup'))]
-    if rule in s['rules']: s['rules'].remove(rule); done()
+    for existing in s['rules']:
+        if existing[:2] == rule: s['rules'].remove(existing); done()
     done(2)
 if a[:1] == ['route']:
     table=val('table')
     routes=s['routes'].setdefault(table, {})
     if a[1] == 'show':
-        if os.environ.get('FAIL_ROUTE_READ') and 'exact' not in a: done(1)
+        if os.environ.get('FAIL_ROUTE_READ'): done(1)
+        if not routes and os.environ.get('MISSING_TABLE'):
+            print('Error: ipv4: FIB table does not exist.\nDump terminated', file=sys.stderr)
+            done(2)
         out=[]
         for cidr, spec in routes.items():
             if 'exact' in a and val('exact') != cidr: continue
@@ -184,6 +188,72 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.run_shell('sync_routes').returncode, 0)
         for flag in ['FAIL_ROUTE_READ', 'FAIL_RULE_READ']:
             self.assertNotEqual(self.run_shell('sync_routes', extra={flag: '1'}).returncode, 0)
+
+    def test_new_table_kernel_enoent_is_an_empty_table(self):
+        result = self.run_shell('sync_routes', extra={'MISSING_TABLE': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.state()['routes']['20111']), 2)
+        self.assertIn([9979, 20111], self.state()['rules'])
+
+    def test_cleanup_keeps_journal_on_query_errors_and_can_retry(self):
+        for flag in ['FAIL_ROUTE_READ', 'FAIL_RULE_READ']:
+            self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+            result = self.run_shell('cleanup_routes', extra={flag: '1'})
+            self.assertNotEqual(result.returncode, 0, flag)
+            self.assertTrue((self.root / 'run/routes').exists(), flag)
+            self.assertTrue((self.root / 'run/lease').exists(), flag)
+            self.assertEqual(self.run_shell('cleanup_routes').returncode, 0)
+            self.assertFalse((self.root / 'run/lease').exists())
+
+    def test_cleanup_handles_table_removed_with_tun(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state()
+        state['routes']['20111'] = {}
+        self.write_state(state)
+        result = self.run_shell('cleanup_routes', extra={'MISSING_TABLE': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / 'run/lease').exists())
+        self.assertNotIn([9979, 20111], self.state()['rules'])
+
+    def test_cleanup_reads_one_route_snapshot_for_all_owned_routes(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state()
+        state['calls'] = []
+        self.write_state(state)
+        self.assertEqual(self.run_shell('cleanup_routes').returncode, 0)
+        calls = self.state()['calls']
+        self.assertEqual(sum(c[:3] == ['-4', 'route', 'show'] for c in calls), 1)
+        self.assertEqual(sum(c[:3] == ['-4', 'route', 'del'] for c in calls), 2)
+
+    def test_stop_attempts_all_cleanup_even_if_hotspot_fails(self):
+        result = self.run_shell("""
+            cleanup_hotspot() { echo hotspot; return 1; }
+            stop_core() { echo core; return 0; }
+            cleanup_routes() { echo routes; return 1; }
+            cleanup_rpc() { echo rpc; return 0; }
+            dispatch stop
+        """)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines(), ['hotspot', 'core', 'routes', 'rpc'])
+
+    def test_cleanup_preserves_same_table_rule_with_foreign_selectors(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state()
+        state['rules'][-1] = [9979, 20111, 'from all iif wlan0']
+        self.write_state(state)
+        self.assertEqual(self.run_shell('cleanup_routes').returncode, 0)
+        self.assertIn([9979, 20111, 'from all iif wlan0'], self.state()['rules'])
+
+    def test_foreign_scoped_rule_cannot_satisfy_overlay_lookup(self):
+        self.assertEqual(self.run_shell('sync_routes').returncode, 0)
+        state = self.state()
+        state['rules'][-1] = [9979, 20111, 'from all iif wlan0']
+        self.write_state(state)
+        result = self.run_shell('sync_routes')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Rule priority changed by another owner', result.stderr)
+        self.assertIn([9979, 20111, 'from all iif wlan0'], self.state()['rules'])
+        self.assertEqual(self.state()['routes']['20111'], {})
 
     def test_stage_markers_use_fixed_names_without_route_payloads(self):
         result = self.run_shell('TN_ACTIVE_REQUEST=abc123; command_stage RECEIVED; sync_routes')

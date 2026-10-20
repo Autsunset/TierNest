@@ -895,6 +895,74 @@ validate_runtime_config() {
     return 0
 }
 
+write_core_compatible_config() (
+    umask 077
+    # Keep the installed TOML authoritative. Only adapt the legacy flag in
+    # a private runtime copy; the core still validates every other key/value.
+    awk '
+        function scan(line, i,c,n,run) {
+            for (i=1;i<=length(line);i++) {
+                c=substr(line,i,1); n=substr(line,i,3)
+                if (quote==1) {
+                    if (c=="\\") i++
+                    else if (c=="\"") quote=0
+                } else if (quote==2) {
+                    if (c==sq) quote=0
+                } else if (quote==3 || quote==4) {
+                    if (quote==3 && c=="\\") {i++; continue}
+                    if ((quote==3 && n=="\"\"\"") || (quote==4 && n==sq sq sq)) {
+                        run=3
+                        while (substr(line,i+run,1)==c) run++
+                        i+=run-1; quote=0
+                    }
+                } else {
+                    if (c=="#") break
+                    if (n=="\"\"\"") {quote=3; i+=2}
+                    else if (n==sq sq sq) {quote=4; i+=2}
+                    else if (c=="\"") quote=1
+                    else if (c==sq) quote=2
+                    else if (c=="[" || c=="{") depth++
+                    else if (c=="]" || c=="}") depth--
+                }
+            }
+        }
+        BEGIN {
+            sq=sprintf("%c",39)
+            flags="(flags|\"flags\"|" sq "flags" sq ")"
+            old="(foreign_network_whitelist|\"foreign_network_whitelist\"|" sq "foreign_network_whitelist" sq ")"
+            modern="(relay_network_whitelist|\"relay_network_whitelist\"|" sq "relay_network_whitelist" sq ")"
+            flags_table="^[ \t]*\\[[ \t]*" flags "[ \t]*\\][ \t]*(#.*)?\r?$"
+            old_key="^[ \t]*" old "[ \t]*="
+            new_key="^[ \t]*" modern "[ \t]*="
+            root_old="^[ \t]*" flags "[ \t]*\\.[ \t]*" old "[ \t]*="
+            root_new="^[ \t]*" flags "[ \t]*\\.[ \t]*" modern "[ \t]*="
+        }
+        {
+            line[NR]=$0
+            if (!quote && !depth) {
+                if ($0 ~ /^[ \t]*\[/) {in_flags=($0 ~ flags_table); table_seen=1}
+                else if ((in_flags && $0 ~ old_key) || (!table_seen && $0 ~ root_old)) {
+                    count++; first[count]=NR; pending=count
+                } else if ((in_flags && $0 ~ new_key) || (!table_seen && $0 ~ root_new)) modern_present=1
+            }
+            scan($0)
+            if (pending && !quote && !depth) {last[pending]=NR; pending=0}
+        }
+        END {
+            if (count>1 || pending) {
+                print "Cannot adapt duplicate or unterminated legacy whitelist setting" > "/dev/stderr"
+                exit 1
+            }
+            if (count) {
+                if (modern_present) {
+                    for (i=first[1];i<=last[1];i++) omit[i]=1
+                } else sub(/foreign_network_whitelist/,"relay_network_whitelist",line[first[1]])
+            }
+            for (i=1;i<=NR;i++) if (!omit[i]) print line[i]
+        }
+    ' "$1" > "$2"
+)
+
 start_core_unlocked() {
     workers_blocked && return 1
     core_running && return 0
@@ -930,13 +998,25 @@ start_core_unlocked() {
             *" --hostname "*|*" --hostname="*) ;;
             *) set -- "$@" --hostname "$host" ;;
         esac
+        rpc_explicit=0
+        for core_arg in "$@"; do
+            case "$core_arg" in --rpc-portal|--rpc-portal=*|-r|-r?*) rpc_explicit=1;; esac
+        done
+        [ "$rpc_explicit" = 1 ] || set -- "$@" --rpc-portal "$(get_rpc_portal listen)"
         TZ=Asia/Shanghai launch_detached "$CORE" "$@" >> "$CORE_LOG" 2>&1 </dev/null &
         mode="参数模式"
     else
+        core_config="$RUNDIR/core-config.toml"
+        if ! write_core_compatible_config "$CONFIG_FILE" "$core_config.new" ||
+            ! mv "$core_config.new" "$core_config"; then
+            rm "$core_config.new" 2>/dev/null || true
+            log_msg "ERROR: cannot prepare compatible core configuration"
+            return 1
+        fi
         if grep -q '^[[:space:]]*hostname[[:space:]]*=' "$CONFIG_FILE"; then
-            TZ=Asia/Shanghai launch_detached "$CORE" -c "$CONFIG_FILE" >> "$CORE_LOG" 2>&1 </dev/null &
+            TZ=Asia/Shanghai launch_detached "$CORE" -c "$core_config" --rpc-portal "$(get_rpc_portal listen)" >> "$CORE_LOG" 2>&1 </dev/null &
         else
-            TZ=Asia/Shanghai launch_detached "$CORE" -c "$CONFIG_FILE" --hostname "$host" >> "$CORE_LOG" 2>&1 </dev/null &
+            TZ=Asia/Shanghai launch_detached "$CORE" -c "$core_config" --hostname "$host" --rpc-portal "$(get_rpc_portal listen)" >> "$CORE_LOG" 2>&1 </dev/null &
         fi
         mode="配置模式"
     fi
@@ -1252,11 +1332,29 @@ get_tun_cidr() {
 }
 
 get_rpc_portal() {
-    portal=$(get_toml_string rpc_portal)
+    rpc_query_mode=${1:-}
+    portal=""
+    if [ -r "$COMMAND_ARGS" ]; then
+        rpc_args=$(tr '\r\n' '  ' < "$COMMAND_ARGS")
+        set -- $rpc_args
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -r|--rpc-portal) portal=${2:-}; break;;
+                --rpc-portal=*) portal=${1#*=}; break;;
+                -r?*) portal=${1#-r}; portal=${portal#=}; break;;
+            esac
+            shift
+        done
+    fi
+    [ -n "$portal" ] || portal=$(get_toml_string rpc_portal)
     [ -n "$portal" ] || portal="127.0.0.1:15888"
-    case "$portal" in
-        0.0.0.0:*) portal="127.0.0.1:${portal##*:}" ;;
-    esac
+    if [ "$rpc_query_mode" != listen ]; then
+        case "$portal" in
+            0.0.0.0:*) portal="127.0.0.1:${portal##*:}" ;;
+            *[!0-9]*|'') ;;
+            *) portal="127.0.0.1:$portal" ;;
+        esac
+    fi
     echo "$portal"
 }
 
@@ -1268,7 +1366,19 @@ cli_route_cidrs() {
     else
         output=$("$CLI" --rpc-portal "$portal" -o json route list 2>/dev/null)
     fi
-    printf '%s\n' "$output" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])' 2>/dev/null
+    # CLI advertises mapped proxies as real->mapped. Only the exposed side is
+    # reachable through the overlay; keep ordinary CIDR extraction unchanged.
+    printf '%s\n' "$output" | awk '
+        {
+            line=$0
+            while (match(line, /([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]|[12][0-9]|3[0-2])/)) {
+                cidr=substr(line,RSTART,RLENGTH)
+                line=substr(line,RSTART+RLENGTH)
+                if (line !~ /^[[:space:]]*->/) {print cidr; found=1}
+            }
+        }
+        END {exit !found}
+    ' 2>/dev/null
 }
 
 overlay_remote_peer_count() (

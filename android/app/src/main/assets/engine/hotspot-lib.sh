@@ -18,11 +18,6 @@ hs_network() {
     }'
 }
 
-hs_overlap() {
-    awk -v x="$1" -v y="$2" 'function addr(s,a) {split(s,a,"."); return ((a[1]*256+a[2])*256+a[3])*256+a[4]}
-        BEGIN {split(x,a,"/"); split(y,b,"/"); p=a[2]<b[2]?a[2]:b[2]; k=2^(32-p); exit int(addr(a[1])/k)!=int(addr(b[1])/k)}'
-}
-
 hs_private() {
     awk -v s="$1" 'BEGIN {split(s,a,"."); exit !(a[1]==10 || (a[1]==172 && a[2]>=16 && a[2]<=31) || (a[1]==192 && a[2]==168))}'
 }
@@ -41,9 +36,10 @@ hs_add() {
 }
 
 hs_return_rule_present() {
-    ip -4 rule show | awk -v p="$1:" -v c="$2" -v t="$3" '
+    ip -4 rule show > "$TN_RUN/hotspot.rules.actual" || return 2
+    awk -v p="$1:" -v c="$2" -v t="$3" '
         NF==9 && $1==p && $2=="from" && $3=="all" && $4=="to" && $5==c &&
-        $6=="iif" && $7=="tiernest0" && $8=="lookup" && $9==t {found=1} END {exit !found}'
+        $6=="iif" && $7=="tiernest0" && $8=="lookup" && $9==t {found=1} END {exit !found}' "$TN_RUN/hotspot.rules.actual"
 }
 
 cleanup_hotspot() (
@@ -81,12 +77,30 @@ cleanup_hotspot() (
         case "$hs_table:$hs_pref" in *[!0-9:]*|:*) return 1;; esac
         [ "$hs_table" -ge 20130 ] && [ "$hs_table" -le 20149 ] &&
             [ "$hs_pref" -ge 9871 ] && [ "$hs_pref" -le 9890 ] || return 1
-        if hs_return_rule_present "$hs_pref" "$hs_cidr" "$hs_table"; then
-            ip -4 rule del pref "$hs_pref" iif tiernest0 to "$hs_cidr" lookup "$hs_table" || hs_failed=1
-        fi
-        if ip -4 route show table "$hs_table" exact "$hs_cidr" proto 186 | grep -Eq "dev $hs_iface([[:space:]]|$)"; then
-            ip -4 route del table "$hs_table" "$hs_cidr" dev "$hs_iface" proto 186 || hs_failed=1
-        fi
+        hs_rc=0
+        hs_return_rule_present "$hs_pref" "$hs_cidr" "$hs_table" || hs_rc=$?
+        case "$hs_rc" in
+            0) ip -4 rule del pref "$hs_pref" iif tiernest0 to "$hs_cidr" lookup "$hs_table" || hs_failed=1;;
+            1) ;;
+            *) hs_failed=1;;
+        esac
+        if route_snapshot "$hs_table" "$TN_RUN/hotspot.routes.actual"; then
+            if awk -v cidr="$hs_cidr" -v iface="$hs_iface" '
+                {
+                    c=$1; first=2
+                    if (c=="unicast") {c=$2; first=3}
+                    if (c !~ /\//) c=c "/32"
+                    if (c!=cidr) next
+                    dev=""; proto=""
+                    for (i=first;i<=NF;i++) {
+                        if ($i=="dev") dev=$(i+1)
+                        if ($i=="proto") proto=$(i+1)
+                    }
+                    if (dev==iface && proto=="186") found=1
+                } END {exit !found}' "$TN_RUN/hotspot.routes.actual"; then
+                ip -4 route del table "$hs_table" "$hs_cidr" dev "$hs_iface" proto 186 || hs_failed=1
+            fi
+        else hs_failed=1; fi
     fi
     if [ -f "$TN_RUN/hotspot.chains" ]; then
         while read -r hs_table hs_chain; do
@@ -191,6 +205,43 @@ hs_apply() (
     hs_add filter FORWARD -i tiernest0 -o "$hs_iface" -j TNAPP_HSF || return 1
 )
 
+hs_collect_targets() {
+    route_snapshot "$tn_table" "$TN_RUN/hotspot.overlay" || return 2
+    # Validate/compare whole inventories in one pass instead of spawning awk,
+    # ip and grep for every peer during each maintenance command.
+    awk -v hotspot="$hs_cidr" '
+        function addr(s, a) {split(s,a,"."); return ((a[1]*256+a[2])*256+a[3])*256+a[4]}
+        function safe(c, a,o,i,p,k) {
+            if (split(c,a,"/")!=2 || a[2]!~/^[0-9]+$/ || a[2]<8 || a[2]>32) return 0
+            if (split(a[1],o,".")!=4) return 0
+            for (i=1;i<=4;i++) if (o[i]!~/^[0-9]+$/ || o[i]>255) return 0
+            if (o[1]==0 || o[1]==127 || o[1]>=224 || (o[1]==169 && o[2]==254)) return 0
+            p=a[2]<h[2]?a[2]:h[2]; k=2^(32-p)
+            return int(addr(a[1])/k)!=int(addr(h[1])/k)
+        }
+        BEGIN {split(hotspot,h,"/")}
+        FILENAME==ARGV[1] {
+            c=$1; first=2
+            if (c=="unicast") {c=$2; first=3}
+            if (c !~ /\//) c=c "/32"
+            dev=""; proto=""
+            for (i=first;i<=NF;i++) {
+                if ($i=="dev") dev=$(i+1)
+                if ($i=="proto") proto=$(i+1)
+            }
+            if (dev=="tiernest0" && proto=="186") available[c]=1
+            next
+        }
+        FILENAME==ARGV[2] {
+            if ($0!="" && !safe($0)) exit 1
+            next
+        }
+        {
+            if (!safe($0)) exit 1
+            if (available[$0]) print
+        }' "$TN_RUN/hotspot.overlay" "$TN_STAGE/hotspot-proxies" "$TN_RUN/routes" > "$TN_RUN/hotspot.targets"
+}
+
 sync_hotspot() (
     read -r hs_enabled hs_extra < "$TN_STAGE/hotspot-query" || return 1
     [ -z "$hs_extra" ] || return 1
@@ -205,18 +256,14 @@ sync_hotspot() (
     # A userspace subnet proxy can bypass FORWARD. Refuse a published hotspot
     # subnet rather than claim one-way access while the core proxies inbound.
     [ -f "$TN_STAGE/hotspot-proxies" ] || { hs_inactive conflict; return; }
-    while IFS= read -r hs_proxy; do
-        [ -n "$hs_proxy" ] || continue
-        valid_cidr "$hs_proxy" || { hs_inactive conflict; return; }
-        hs_overlap "$hs_proxy" "$hs_cidr" && { hs_inactive conflict; return; }
-    done < "$TN_STAGE/hotspot-proxies"
-    : > "$TN_RUN/hotspot.targets"
-    while IFS= read -r hs_target; do
-        valid_cidr "$hs_target" || { hs_inactive conflict; return; }
-        hs_overlap "$hs_target" "$hs_cidr" && { hs_inactive conflict; return; }
-        ip -4 route show table "$tn_table" exact "$hs_target" proto 186 | grep -Eq 'dev tiernest0([[:space:]]|$)' || continue
-        echo "$hs_target" >> "$TN_RUN/hotspot.targets"
-    done < "$TN_RUN/routes"
+    [ -f "$TN_RUN/routes" ] || { hs_inactive waiting_routes; return; }
+    hs_rc=0
+    hs_collect_targets || hs_rc=$?
+    case "$hs_rc" in
+        0) ;;
+        1) hs_inactive conflict; return;;
+        *) hs_inactive error; return;;
+    esac
     hs_count=$(wc -l < "$TN_RUN/hotspot.targets")
     [ "$hs_count" -gt 0 ] || { hs_inactive waiting_routes; return; }
     [ "$hs_count" -le 128 ] || { hs_inactive too_many_routes; return; }

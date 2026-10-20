@@ -33,25 +33,47 @@ object RoutePlanner {
 
     /** Keep exactly the same address coverage while dropping routes already
      * covered by a broader route. Never merge adjacent ranges into new space. */
-    fun minimalRoutes(routes: List<String>): List<String> {
+    fun minimalRoutes(routes: List<String>): List<String> =
+        compact(routes.map { requireNotNull(cidr(it)) { "无效 IPv4 路由" } })
+
+    private fun compact(routes: List<Ipv4Cidr>): List<String> {
         val kept = mutableListOf<Ipv4Cidr>()
-        routes.map { requireNotNull(cidr(it)) { "无效 IPv4 路由" } }.distinct()
-            .sortedWith(compareBy<Ipv4Cidr> { it.prefix }.thenBy { it.network }).forEach { candidate ->
-                if (kept.none { it.prefix <= candidate.prefix && it.overlaps(candidate) }) kept.add(candidate)
-            }
+        // Normalized CIDRs are either disjoint or nested. In address order,
+        // only the last retained range can cover the next candidate.
+        routes.sortedWith(compareBy<Ipv4Cidr> { it.network }.thenBy { it.prefix }).forEach { candidate ->
+            if (kept.lastOrNull()?.overlaps(candidate) != true) kept.add(candidate)
+        }
         return kept.map { it.toString() }.sorted()
+    }
+
+    private fun proxyDestination(input: String): Ipv4Cidr? {
+        val arrow = input.indexOf("->")
+        if (arrow < 0) return cidr(input)
+        // EasyTier advertises real_cidr->mapped_cidr. Only the mapped side is
+        // reachable through the overlay; the real side may even be loopback.
+        val source = cidr(input.substring(0, arrow)) ?: return null
+        val destination = cidr(input.substring(arrow + 2)) ?: return null
+        return destination.takeIf { it.prefix == source.prefix }
     }
 
     fun plan(local: String, peers: List<Peer>, physicalNetworks: List<String>): RoutePlan {
         val physical = physicalNetworks.mapNotNull(::cidr)
-        val candidates = listOf(local) + peers.flatMap { listOf(it.ipv4) + it.subnets }
         val excluded = mutableListOf<String>()
-        val routes = candidates.filter { it.isNotBlank() && it != "-" }.mapNotNull { raw ->
-            val value = cidr(raw)
+        val routes = mutableListOf<Ipv4Cidr>()
+        fun add(raw: String, proxy: Boolean = false) {
+            if (raw.isBlank() || raw == "-") return
+            val value = if (proxy) proxyDestination(raw) else cidr(raw)
             if (value == null || !safe(value) || physical.any { value.overlaps(it) }) {
-                excluded.add(raw); null
-            } else value.toString()
-        }.distinct().sorted()
-        return RoutePlan(routes, excluded.distinct())
+                excluded.add(raw)
+            } else routes.add(value)
+        }
+        add(local)
+        for (peer in peers) {
+            add(peer.ipv4)
+            peer.subnets.forEach { add(it, proxy = true) }
+        }
+        // Both backends and hotspot sharing use the same minimal coverage.
+        // A peer joining an already-routed subnet must not rebuild kernel rules.
+        return RoutePlan(compact(routes), excluded.distinct())
     }
 }

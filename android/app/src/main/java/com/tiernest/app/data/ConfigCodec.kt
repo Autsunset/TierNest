@@ -13,7 +13,7 @@ data class NetworkForm(
 )
 
 object FeatureOptions {
-    // Defaults from the pinned EasyTier 2.6.4 gen_default_flags().
+    // Defaults from the pinned EasyTier 2.7.0 gen_default_flags().
     val defaults = linkedMapOf("enable_encryption" to true, "enable_ipv6" to true,
         "latency_first" to false, "disable_p2p" to false, "bind_device" to true,
         "private_mode" to false, "disable_udp_hole_punching" to false,
@@ -179,6 +179,11 @@ object ConfigCodec {
         require((config["exit_nodes"] as? List<*>)?.isNotEmpty() != true) { "与 VPN 共存模式不支持出口节点；请先在配置中移除 exit_nodes" }
         require(!config.containsKey("ipv6")) { "首版仅管理 IPv4 虚拟路由；暂不支持 ipv6 字段" }
         val flags = (config["flags"] as? Map<String, Any>).orEmpty().toMutableMap()
+        // Older module templates used the retired spelling. Translate only the
+        // runtime copy; an explicitly configured current spelling takes priority.
+        flags.remove("foreign_network_whitelist")?.let { legacy ->
+            if (!flags.containsKey("relay_network_whitelist")) flags["relay_network_whitelist"] = legacy
+        }
         require(flags["no_tun"] != true) { "App 组网需要 TUN，不能设置 no_tun=true" }
         require(flags["enable_exit_node"] != true) { "共存模式不能启用出口节点" }
         // Private runtime copy: importing or upgrading never rewrites source TOML.

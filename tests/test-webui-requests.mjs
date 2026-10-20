@@ -58,3 +58,29 @@ context.startStatusPolling(); context.startLogPolling();
 for (let t = 5000; t <= 30000; t += 5000) for (const timer of timers) if (t % timer.ms === 0) await timer.fn();
 assert.equal(logReads, 6, 'one log poll per five seconds, not two independent pollers');
 console.log('Single log polling source regression passed.');
+
+let topologyReads = 0;
+const topologyContext = vm.createContext({
+  state: { activeTab: 'tab-overview', lastStatus: { state: 'stopped', home_paused: '1' }, lastTopologyAt: 0 },
+  dom: { topologySvg: {} }, pageIsVisible: () => true,
+  readRequests: { topology: new LatestRequest() },
+  async runControl(command) {
+    assert.equal(command, 'topology-json');
+    topologyReads++;
+    return { errno: 0, stdout: '[]' };
+  },
+  async refreshOverviewStatus() {}, renderTopology() {},
+});
+vm.runInContext(source.slice(source.indexOf('function loadTopology('), source.indexOf('function parseOverviewSnapshot')), topologyContext);
+vm.runInContext(source.slice(source.indexOf('async function refreshVisibleTab'), source.indexOf('function startStatusPolling')), topologyContext);
+await topologyContext.loadTopology({ quiet: true });
+await topologyContext.refreshVisibleTab();
+await tick();
+assert.equal(topologyReads, 0, 'Stopped and automatically paused cores have no topology to poll');
+topologyContext.state.lastStatus = { state: 'running' };
+await topologyContext.refreshVisibleTab();
+await tick();
+assert.equal(topologyReads, 1, 'Topology polling resumes once the core is running');
+await topologyContext.refreshVisibleTab();
+assert.equal(topologyReads, 1, 'Unchanged running topology retains its 60-second interval');
+console.log('Stopped-core topology polling regression passed.');

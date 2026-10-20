@@ -84,25 +84,64 @@ read_lease() {
         [ "$tn_pref" -ge 9901 ] && [ "$tn_pref" -le 9980 ]
 }
 
+route_snapshot() {
+    # iproute2 reports an unused/deleted table as ENOENT, not an empty dump.
+    # Only that explicit kernel response means absence; other errors are retryable.
+    if LC_ALL=C ip -4 route show table "$1" > "$2" 2> "$TN_RUN/route-error"; then return 0; fi
+    [ ! -s "$2" ] && grep -q 'FIB table does not exist' "$TN_RUN/route-error"
+}
+
+lease_rule_present() {
+    awk -v p="$tn_pref:" -v t="$tn_table" '
+        NF==5 && $1==p && $2=="from" && $3=="all" && $4=="lookup" && $5==t {found=1}
+        END {exit !found}' "$TN_RUN/rules.actual"
+}
+
 cleanup_routes() {
     read_lease || return 0
     tn_failed=0
     # Delete by full identity, never by priority alone or by flushing a table.
-    if ip -4 rule show | grep -Eq "^[[:space:]]*$tn_pref:.*lookup $tn_table([[:space:]]|$)"; then
-        ip -4 rule del pref "$tn_pref" lookup "$tn_table" || tn_failed=1
-    fi
-    if [ -f "$TN_RUN/routes" ]; then
+    if ip -4 rule show > "$TN_RUN/rules.actual"; then
+        if lease_rule_present; then
+            ip -4 rule del pref "$tn_pref" lookup "$tn_table" || tn_failed=1
+        fi
+    else tn_failed=1; fi
+    if [ -f "$TN_RUN/routes" ] && route_snapshot "$tn_table" "$TN_RUN/cleanup.actual"; then
+        awk -v journal="$TN_RUN/routes" '
+            BEGIN {while ((getline c < journal) > 0) owned[c]=1; close(journal)}
+            {
+                c=$1; first=2
+                if (c=="unicast") {c=$2; first=3}
+                if (c !~ /\//) c=c "/32"
+                if (!owned[c]) next
+                dev=""; proto=""
+                for (i=first;i<=NF;i++) {
+                    if ($i=="dev") dev=$(i+1)
+                    if ($i=="proto") proto=$(i+1)
+                }
+                if (dev=="tiernest0" && proto=="186") print c
+            }' "$TN_RUN/cleanup.actual" > "$TN_RUN/cleanup.routes" || return 1
         while IFS= read -r tn_cidr; do
             valid_cidr "$tn_cidr" || continue
             # A recorded but unsuccessful add is harmless. Never delete a replacement
             # owned by another client (different interface/protocol).
-            if ip -4 route show table "$tn_table" exact "$tn_cidr" proto 186 | grep -Eq 'dev tiernest0([[:space:]]|$)'; then
-                ip -4 route del table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 || tn_failed=1
-            fi
-        done < "$TN_RUN/routes"
+            ip -4 route del table "$tn_table" "$tn_cidr" dev tiernest0 proto 186 || tn_failed=1
+        done < "$TN_RUN/cleanup.routes"
+    elif [ -f "$TN_RUN/routes" ]; then
+        tn_failed=1
     fi
     if [ "$tn_failed" = 0 ]; then rm -f "$TN_RUN/routes" "$TN_RUN/lease"; fi
     [ "$tn_failed" = 0 ]
+}
+
+stop_engine() {
+    tn_stop_failed=0
+    # A failing firewall cleanup must never leave the core running after Stop.
+    cleanup_hotspot || tn_stop_failed=1
+    stop_core || tn_stop_failed=1
+    cleanup_routes || tn_stop_failed=1
+    cleanup_rpc || tn_stop_failed=1
+    [ "$tn_stop_failed" = 0 ]
 }
 
 allocate_routes() {
@@ -137,7 +176,7 @@ sync_routes() {
     command_stage ROUTE_SNAPSHOT
     # A foreign default route appearing in our table would capture normal VPN
     # traffic through the lookup rule. Withdraw our rule instead of using it.
-    ip -4 route show table "$tn_table" > "$TN_RUN/actual" 2>/dev/null || return 1
+    route_snapshot "$tn_table" "$TN_RUN/actual" || return 1
     ip -o -4 addr show dev tiernest0 > "$TN_RUN/address" || return 1
     tn_ip=$(awk 'NR==1{split($4,a,"/"); print a[1]}' "$TN_RUN/address")
     [ -n "$tn_ip" ] || return 1
@@ -206,7 +245,7 @@ sync_routes() {
     cp "$TN_RUN/desired" "$TN_RUN/routes" || return 1
     command_stage ROUTE_RULE
     ip -4 rule show > "$TN_RUN/rules.actual" || return 1
-    if ! grep -Eq "^[[:space:]]*$tn_pref:.*lookup $tn_table([[:space:]]|$)" "$TN_RUN/rules.actual"; then
+    if ! lease_rule_present; then
         if grep -Eq "^[[:space:]]*$tn_pref:" "$TN_RUN/rules.actual"; then
             cleanup_routes; fail 'Rule priority changed by another owner'; return 1
         fi
@@ -341,7 +380,7 @@ snapshot_module() {
 dispatch() {
     case "$1" in
         start) start_core;;
-        stop) cleanup_hotspot && stop_core && cleanup_routes && cleanup_rpc;;
+        stop) stop_engine;;
         status) engine_status;;
         sync) sync_routes;;
         hotspot) sync_hotspot;;

@@ -32,4 +32,31 @@ if grep -Eq 'must-not-be-read|module-log-secret' "$output"; then
   exit 1
 fi
 
+# A failed publish must not report a nonexistent path as a successful export.
+mkdir -p "$TMP/mockbin"
+cat > "$TMP/mockbin/mv" <<'MOCK'
+#!/bin/sh
+echo 'mock publish failed' >&2
+exit 1
+MOCK
+chmod +x "$TMP/mockbin/mv"
+if PATH="$TMP/mockbin:$PATH" TIERNEST_EXPORT_DIR="$TMP/export" /bin/bash "$MOD/control.sh" export-log > "$TMP/failed-output" 2> "$TMP/failed-error"; then
+  echo 'Export reported success after publishing failed' >&2
+  exit 1
+fi
+[[ ! -s "$TMP/failed-output" ]]
+[[ -z "$(find "$TMP/export" -name '*.tmp' -print)" ]]
+
+# Exercise the write/redaction failure independently from report collection.
+export MODDIR="$MOD" TIERNEST_EXPORT_DIR="$TMP/export"
+. "$MOD/common.sh"
+eval "$(sed -n '/^export_logs() {/,/^}/p' "$MOD/control.sh")"
+redact_sensitive() { cat >/dev/null; return 1; }
+if export_logs > "$TMP/failed-output" 2> "$TMP/failed-error"; then
+  echo 'Export reported success after writing failed' >&2
+  exit 1
+fi
+[[ ! -s "$TMP/failed-output" ]]
+[[ -z "$(find "$TMP/export" -name '*.tmp' -print)" ]]
+
 echo 'Export log test passed.'

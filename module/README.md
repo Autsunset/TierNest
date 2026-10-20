@@ -1,12 +1,13 @@
 # TierNest Core
 
-当前版本：**1.1.0**，EasyTier 核心 **2.6.4**。
+当前源码版本：**1.1.1**，EasyTier 核心 **2.7.0**（上游预发布版）。
+最后公开发布的模块仍为 **1.1.0 / 2.6.4**；模块不恢复公开版本发布，保留源码构建入口。
 
 TierNest 是 Android Root 设备上的 EasyTier 后台模块，支持 arm64 手机和平板，兼容 Magisk、KernelSU 和 APatch。
 
 ## 安装和升级
 
-所有设备使用同一个 `TierNest-v1.1.0-et2.6.4-arm64.zip`。
+当前源码为所有设备构建同一个 `TierNest-v1.1.1-et2.7.0-arm64.zip`。
 
 已有 TierNest 时，在 Root 管理器中直接覆盖安装，再重启。请保留旧模块后再升级，不要先卸载；安装器会从旧模块继承配置。
 
@@ -17,6 +18,20 @@ TierNest 是 Android Root 设备上的 EasyTier 后台模块，支持 arm64 手�
 - 首次安装使用未配置模板，需要在 WebUI 填写组网信息。
 
 不再按设备型号、hostname、IP 或 profile_revision 覆盖配置，也不再提供三个设备专用包。
+
+## v1.1.1 源码维护
+
+- 内核与 CLI 固定到官方 EasyTier 2.7.0，构建时校验包与二进制摘要，不复用旧版本缓存。
+- 历史模板中的 `foreign_network_whitelist` 在私有运行/校验副本中兼容为
+  `relay_network_whitelist`，原文件和备份不变，新字段优先。覆盖普通/带引号的
+  `[flags]` 表和根级 dotted 键；手写内联 flags 表中的旧键需自行更正，不盲改字符串。
+  启动显式传入原 RPC 端点，避免 2.7 忽略网络 TOML 的管理端口后回退到通配地址/
+  自动端口，导致自定义端口失联或意外暴露监听。
+- WebUI 保存无 IPv4 的配置时保留未配置状态，不再填入共同的固定地址；停止/自动待机
+  时不再反复调用拓扑命令。诊断导出写入或发布失败会返回失败，不虚报成功。
+- 已安装设备的 TOML、参数、路由/热点偏好、手动停止和备份继承规则不变。
+  EasyTier 2.7.0 不再接受旧 WireGuard 入口 `client_cidr` / `wg://host:port/CIDR`，
+  或仅 token 的 `--config-server`；这些高级配置需要人工迁移，安装器不改写原文。
 
 ## v1.1.0：自动检测方式和间隔
 

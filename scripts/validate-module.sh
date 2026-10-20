@@ -43,6 +43,7 @@ bash "$ROOT/tests/test-netwatch.sh"
 "$ROOT/tests/test-auto-tun.sh"
 "$ROOT/tests/test-control-status.sh"
 "$ROOT/tests/test-config-api.sh"
+bash "$ROOT/tests/test-core-config-compat.sh"
 bash "$ROOT/tests/test-backup-download.sh"
 "$ROOT/tests/test-config-write-lock.sh"
 "$ROOT/tests/test-metrics.sh"
@@ -60,6 +61,7 @@ node "$ROOT/tests/test-topology-graph.mjs"
 node "$ROOT/tests/test-webui-requests.mjs"
 node "$ROOT/tests/test-webui-toml.mjs" "$MODULE/config/config.toml" >/dev/null
 "${PYTHON:-python3}" "$ROOT/tests/test-release-package.py"
+"${PYTHON:-python3}" "$ROOT/tests/test-upstream-release.py"
 if [[ -n "${CHROME_BIN:-}" ]] || command -v google-chrome >/dev/null 2>&1; then
   node "$ROOT/tests/test-webui-browser.mjs"
 fi

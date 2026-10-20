@@ -1,9 +1,18 @@
 # EasyTier Android VPN bridge
 
-This LGPL-3.0-only Rust crate links EasyTier **2.6.4**, source commit
-`8428a89d2dabc94c97d370ec607c6ca142473626`. It uses the upstream Android mobile
+This LGPL-3.0-only Rust crate links EasyTier **2.7.0**, source commit
+`8b7f1f0196edb5b580829ed5f135050fb5853478`. It uses the upstream Android mobile
 TUN implementation, with Java retaining ownership of each file descriptor.
 It exports a small JNI interface and opens no TCP management port.
+
+The 2.7 bridge uses the native instance manager's asynchronous shutdown and
+subscribes to TUN-ready events for the actual descriptor instead of polling
+whole-network snapshots every 20 ms. Status collection omits unused management
+history and indexes next-hop lookups without changing the Android JSON fields.
+
+EasyTier tags 2.7.0 as a pre-release. Root payloads and this source-built library
+share the release pins in `scripts/easytier-release.conf`; the build regressions
+check the Cargo manifest/lock against those pins.
 
 ## Build or modify
 
@@ -22,6 +31,11 @@ ABIs from the locked sources, and places `libtiernest_vpn.so` in
 `android/app/build/generated/vpnJniLibs/<abi>/`. ELF LOAD segments use 16 KiB
 alignment. The Gradle build packages these libraries in the APK. No unpublished
 precompiled bridge or signing service is needed.
+
+License notices are collected offline from the union of both built Android
+target graphs, including their build dependencies. Unrelated desktop-target
+crates are not downloaded just to generate Android notices; old generated
+notice files are removed on regeneration.
 
 Bindgen uses the pinned NDK's Clang executable, libclang and explicit Android
 header search paths. Host Clang resource headers must not be mixed into this

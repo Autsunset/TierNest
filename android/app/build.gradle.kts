@@ -22,8 +22,8 @@ android {
         applicationId = if (ciSigning) "com.tiernest.app.ci" else "com.tiernest.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.2.0-rc06" + if (ciSigning) "-ci" else ""
+        versionCode = 17
+        versionName = "0.2.0-rc07" + if (ciSigning) "-ci" else ""
         manifestPlaceholders["appLabel"] = if (ciSigning) "TierNest CI" else "TierNest"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
@@ -80,7 +80,8 @@ val prepareEngine by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir.parentFile)
     commandLine("bash", "scripts/prepare-android-engine.sh")
     inputs.files(fileTree("src/main/assets"), "../../scripts/prepare-android-engine.sh",
-        "../../scripts/fetch-upstream.sh", "../../scripts/build-home-probe.sh", "../../native/home-probe.c",
+        "../../scripts/fetch-upstream.sh", "../../scripts/easytier-release.conf",
+        "../../scripts/build-home-probe.sh", "../../native/home-probe.c",
         "../../LICENSE", "../../THIRD_PARTY_NOTICES.md")
     outputs.dir(layout.buildDirectory.dir("generated/engineAssets"))
 }

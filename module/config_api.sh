@@ -173,17 +173,17 @@ decode_config_payload() {
     chmod 0600 "$output" 2>/dev/null
 }
 
-validate_config_file() {
-    file=$1
-    validation_output=$(mktemp "$RUNDIR/config-validation.XXXXXX") || return 1
-    if "$CORE" --check-config --config-file "$file" > "$validation_output" 2>&1; then
-        rm "$validation_output" 2>/dev/null
-        return 0
-    fi
+validate_config_file() (
+    umask 077
+    validation_dir=$(mktemp -d "$RUNDIR/config-validation.XXXXXX") || return 1
+    trap 'rm -rf "$validation_dir"' 0
+    trap 'exit 1' HUP INT TERM
+    write_core_compatible_config "$1" "$validation_dir/config.toml" || return 1
+    validation_output="$validation_dir/output"
+    if "$CORE" --check-config --config-file "$validation_dir/config.toml" > "$validation_output" 2>&1; then return 0; fi
     redact_config_output < "$validation_output" >&2
-    rm "$validation_output" 2>/dev/null
     return 1
-}
+)
 
 config_read_b64() {
     [ -r "$CONFIG_FILE" ] || {

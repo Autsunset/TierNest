@@ -24,16 +24,13 @@ if ! mkdir "$TN_RUN/session.lock" 2>/dev/null; then
 fi
 printf '%s %s\n' "$$" "$(pid_identity "$$")" > "$TN_RUN/session.lock/owner"
 cleanup() {
-    cleanup_hotspot
-    stop_core
-    cleanup_routes
-    cleanup_rpc
+    stop_engine
     rm -f "$TN_ROOT/effective.toml" "$TN_RUN/session.lock/owner"
     rmdir "$TN_RUN/session.lock" 2>/dev/null || true
 }
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
-cleanup_hotspot && stop_core && cleanup_routes && cleanup_rpc || exit 1
+stop_engine || exit 1
 # Root-owned payloads are installed and verified once per digest. A standby
 # identity check must not reread tens of megabytes of binaries every 30 seconds.
 if ! cmp -s "$TN_STAGE/SHA256SUMS" "$TN_ROOT/bin/SHA256SUMS" ||

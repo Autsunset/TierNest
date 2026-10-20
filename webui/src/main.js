@@ -251,7 +251,7 @@ function parseKeyValue(text) {
 const DEFAULT_CONFIG_TEMPLATE = {
   instance_name: 'default',
   hostname: '',
-  ipv4: '10.144.144.2/24',
+  ipv4: '',
   dhcp: false,
   listeners: [
     'tcp://0.0.0.0:11010',
@@ -275,7 +275,6 @@ const DEFAULT_CONFIG_TEMPLATE = {
     enable_exit_node: false,
     no_tun: false,
     use_smoltcp: false,
-    foreign_network_whitelist: '*',
     disable_p2p: false,
     relay_all_peer_rpc: false,
     disable_udp_hole_punching: false,
@@ -326,6 +325,7 @@ function generateToml(config) {
       : [],
   };
   delete document.peers;
+  if (document.ipv4 === '') delete document.ipv4;
   return stringifyTomlDocument(document).trimEnd() + '\n';
 }
 
@@ -1628,7 +1628,7 @@ function renderTopology(rawRoutes) {
 }
 
 function loadTopology({ quiet = false, force = false } = {}) {
-  if (!dom.topologySvg || !pageIsVisible()) return Promise.resolve();
+  if (!dom.topologySvg || !pageIsVisible() || state.lastStatus?.state === 'stopped') return Promise.resolve();
   return readRequests.topology.run('topology', async isCurrent => {
     if (!quiet) dom.topologyRefreshBtn?.classList.add('is-spinning');
     try {

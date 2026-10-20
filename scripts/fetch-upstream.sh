@@ -2,12 +2,17 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-VERSION=${EASYTIER_VERSION:-2.6.4}
+REQUESTED_VERSION=${EASYTIER_VERSION:-}
+. "$ROOT/scripts/easytier-release.conf"
+if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" != "$EASYTIER_VERSION" ]]; then
+  echo "This build pins EasyTier $EASYTIER_VERSION; update the release pins to change it." >&2
+  exit 1
+fi
+VERSION=$EASYTIER_VERSION
 CACHE="$ROOT/.cache"
 ARCHIVE="$CACHE/Easytier-Magisk-v${VERSION}.zip"
 PART="$ARCHIVE.part"
 URL="https://github.com/EasyTier/EasyTier/releases/download/v${VERSION}/Easytier-Magisk-v${VERSION}.zip"
-EXPECTED_V264="39a6b4fa21d9fdc83d3b38c90562f610c0986ecc089c4026c3be22a0ab27c5e5"
 
 mkdir -p "$CACHE" "$ROOT/module/bin"
 
@@ -35,16 +40,28 @@ download_archive() {
 [[ -s "$ARCHIVE" ]] || download_archive
 
 ACTUAL=$(sha256sum "$ARCHIVE" | awk '{print $1}')
-if [[ "$VERSION" == "2.6.4" && "$ACTUAL" != "$EXPECTED_V264" ]]; then
+if [[ "$ACTUAL" != "$EASYTIER_ARCHIVE_SHA256" ]]; then
   echo "Checksum mismatch for $ARCHIVE" >&2
-  echo "expected: $EXPECTED_V264" >&2
+  echo "expected: $EASYTIER_ARCHIVE_SHA256" >&2
   echo "actual:   $ACTUAL" >&2
   exit 1
 fi
 
-unzip -p "$ARCHIVE" easytier-core > "$ROOT/module/bin/easytier-core"
-unzip -p "$ARCHIVE" easytier-cli > "$ROOT/module/bin/easytier-cli"
-chmod 0755 "$ROOT/module/bin/easytier-core" "$ROOT/module/bin/easytier-cli"
+# Never truncate a working payload when extraction fails. Recheck cached
+# executables too, so a new release cannot silently reuse an older core.
+STAGE=$(mktemp -d "$ROOT/module/bin/.upstream.XXXXXX")
+trap 'rm -rf "$STAGE"' EXIT
+unzip -p "$ARCHIVE" easytier-core > "$STAGE/easytier-core"
+unzip -p "$ARCHIVE" easytier-cli > "$STAGE/easytier-cli"
+printf '%s  %s\n' "$EASYTIER_CORE_SHA256" "$STAGE/easytier-core" \
+  "$EASYTIER_CLI_SHA256" "$STAGE/easytier-cli" | sha256sum -c -
+chmod 0755 "$STAGE/easytier-core" "$STAGE/easytier-cli"
+for name in easytier-core easytier-cli; do
+  if ! cmp -s "$STAGE/$name" "$ROOT/module/bin/$name"; then
+    mv "$STAGE/$name" "$ROOT/module/bin/$name"
+  fi
+  chmod 0755 "$ROOT/module/bin/$name"
+done
 
 file "$ROOT/module/bin/easytier-core"
 file "$ROOT/module/bin/easytier-cli"

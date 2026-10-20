@@ -92,4 +92,28 @@ class ConfigCodecTest {
         assertTrue(error!!.message!!.contains("MTU"))
         assertEquals("9000", ConfigCodec.form(ConfigCodec.effective(text.replace("12000", "9000"), ConnectionMode.VPN)).mtu)
     }
+
+    @Test fun legacyRelayFlagIsTranslatedOnlyInRuntimeCopyForBothBackends() {
+        val source = """
+            dhcp = true
+            [network_identity]
+            network_name = "synthetic-mesh"
+            network_secret = "synthetic-secret"
+            [flags]
+            foreign_network_whitelist = "synthetic-relay-*"
+            custom_option = "preserve-me"
+        """.trimIndent() + "\n"
+        for (mode in ConnectionMode.entries) {
+            val flags = ConfigCodec.parse(ConfigCodec.effective(source, mode))["flags"] as Map<*, *>
+            assertFalse(flags.containsKey("foreign_network_whitelist"))
+            assertEquals("synthetic-relay-*", flags["relay_network_whitelist"])
+            assertEquals("preserve-me", flags["custom_option"])
+            val explicit = ConfigCodec.parse(ConfigCodec.effective(source +
+                "relay_network_whitelist = \"explicit-*\"\n", mode))["flags"] as Map<*, *>
+            assertEquals("explicit-*", explicit["relay_network_whitelist"])
+        }
+        val original = ConfigCodec.parse(source)["flags"] as Map<*, *>
+        assertEquals("synthetic-relay-*", original["foreign_network_whitelist"])
+        assertFalse(original.containsKey("relay_network_whitelist"))
+    }
 }

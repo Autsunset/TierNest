@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT="$ROOT/android/app/build/generated/engineAssets"
-EASYTIER_VERSION=2.6.4 "$ROOT/scripts/fetch-upstream.sh"
+bash "$ROOT/scripts/fetch-upstream.sh"
 mkdir -p "$OUT/engine" "$OUT/licenses"
 cp "$ROOT/module/bin/easytier-core" "$ROOT/module/bin/easytier-cli" "$OUT/engine/"
 bash "$ROOT/scripts/build-home-probe.sh"

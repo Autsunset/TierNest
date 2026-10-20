@@ -56,6 +56,12 @@ def inspect(apk, sdk, mode):
         'application-debuggable' in badging, mode, expected_version, expected_code, release_cert)
     if "sdkVersion:'26'" not in badging: errors.append('minimum Android API changed')
     if "targetSdkVersion:'36'" not in badging: errors.append('target Android API changed')
+    release_pins = dict(line.split('=', 1) for line in (ROOT / 'scripts/easytier-release.conf').read_text().splitlines()
+                        if line and not line.startswith('#'))
+    upstream_payloads = {
+        'easytier-core': release_pins['EASYTIER_CORE_SHA256'],
+        'easytier-cli': release_pins['EASYTIER_CLI_SHA256'],
+    }
     with zipfile.ZipFile(apk) as archive:
         native = [n for n in archive.namelist() if n.startswith('lib/') and n.endswith('.so')]
         if {n.split('/')[1] for n in native} != {'arm64-v8a', 'x86_64'}: errors.append('expected both supported native ABIs')
@@ -67,7 +73,11 @@ def inspect(apk, sdk, mode):
             if name in payloads: errors.append('duplicate Root payload checksum')
             payloads.add(name)
             if name not in {'easytier-core', 'easytier-cli', 'home-probe'}: errors.append('unexpected Root payload')
-            elif hashlib.sha256(archive.read('assets/engine/' + name)).hexdigest() != digest: errors.append('Root payload checksum mismatch')
+            else:
+                actual = hashlib.sha256(archive.read('assets/engine/' + name)).hexdigest()
+                if actual != digest: errors.append('Root payload checksum mismatch')
+                if name in upstream_payloads and actual != upstream_payloads[name]:
+                    errors.append(f'Root payload does not match pinned EasyTier release: {name}')
         if payloads != {'easytier-core', 'easytier-cli', 'home-probe'}: errors.append('incomplete Root payload manifest')
     if errors: raise ValueError('; '.join(errors))
     subprocess.run([str(build_tools / 'zipalign'), '-c', '-P', '16', '4', str(apk)], check=True)
@@ -85,7 +95,7 @@ def main():
     sdk = Path(os.environ.get('ANDROID_HOME', os.environ.get('ANDROID_SDK_ROOT', str(Path.home() / 'Android/Sdk'))))
     result = inspect(args.apk, sdk, args.mode)
     if args.report: args.report.write_text(json.dumps(result, indent=2) + '\n')
-    print('Verified APK identity, signing certificate, release flags, native ABIs and 16 KiB alignment')
+    print('Verified APK identity, signing certificate, release flags, pinned Root payloads, native ABIs and 16 KiB alignment')
 
 
 if __name__ == '__main__':

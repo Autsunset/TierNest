@@ -1,9 +1,15 @@
 # TierNest Android App
 
-**0.2.0-rc06 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.6.4
+**0.2.0-rc07 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.7.0
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
+
+Root 二进制与 VPN 库统一使用固定提交的 EasyTier 2.7.0，上游将其标为预发布版。
+版本、源码提交与官方包/二进制 SHA-256 记录在 `scripts/easytier-release.conf`；
+构建时核验，连接和状态采样时不增加版本检查。
+旧 `vpn_portal.client_cidr` / `wg://host:port/CIDR` 和仅 token 的
+`--config-server` 不再受上游支持，需要用户迁移；原始配置不被静默改写。
 
 | 模式 | 要求 | 与其他 VPN 共存 |
 | --- | --- | --- |
@@ -36,6 +42,10 @@ Root 模式可选择让 Wi-Fi 热点设备单向访问组网。
 - 概览流量每 3 秒采样，节点信息最多缓存 15 秒；进入节点页立即恢复每 3 秒刷新。
   网络事件和路由维护强制刷新，界面发现新增/撤回的子网会立即触发路由协调。
   Root 完整性检查只修改缺失、变化或撤回的路由，健康路由不重复写入。
+- Root/VPN 共用最小路由覆盖：已被子网覆盖的节点 `/32` 不再重复下发，同子网内
+  节点进出不会单独触发 Root/热点规则重建。热点目标检查批量读取一次路由快照，
+  不再为每个目标分别启动 `ip`、`awk` 和 `grep`。
+  映射子网 `real_cidr->mapped_cidr` 只接管映射目标，不接管远端的真实源网段。
 - 熄屏、核心待机或离开数据页时，不保留界面的 3 秒采样定时器；正在读取的 Root
   响应完整消费后停止。返回界面时重置速率基线，不把后台时间混入实时速率。
 
@@ -178,8 +188,8 @@ sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-CI 模式输出 `dist/TierNest-CI-v0.2.0-rc06-ci.apk`；维护者发布模式输出
-`dist/TierNest-App-v0.2.0-rc06.apk`。上游下载、Cargo 依赖、工具版本和
+CI 模式输出 `dist/TierNest-CI-v0.2.0-rc07-ci.apk`；维护者发布模式输出
+`dist/TierNest-App-v0.2.0-rc07.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
 候选包采用 Release 优化且不可调试。维护者包保留已发布 APK 的签名身份，私钥现由

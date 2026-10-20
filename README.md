@@ -10,7 +10,7 @@ VPN / Root 双模式 · 原生 Compose 界面 · 实时节点拓扑 · TOML 配�
 
 [![Release](https://img.shields.io/github/v/release/Autsunset/TierNest?include_prereleases&style=flat-square&label=%E5%8F%91%E5%B8%83)](https://github.com/Autsunset/TierNest/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84?style=flat-square&logo=android&logoColor=white)](https://github.com/Autsunset/TierNest/releases)
-[![EasyTier Core](https://img.shields.io/badge/EasyTier%20Core-2.6.4-ff6f00?style=flat-square)](https://github.com/EasyTier/EasyTier)
+[![EasyTier Core](https://img.shields.io/badge/EasyTier%20Core-2.7.0-ff6f00?style=flat-square)](https://github.com/EasyTier/EasyTier)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-blue?style=flat-square)](LICENSE)
 
 [下载最新版](https://github.com/Autsunset/TierNest/releases) · [快速上手](#下载与安装) · [从源码构建](#从源码构建) · [文档](#文档) · [更新日志](CHANGELOG.md)
@@ -31,7 +31,7 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 | | 独立 App | Root 模块（已停止发布） |
 | --- | --- | --- |
-| 当前版本 | 0.2.0-rc06 | 1.1.0（最终版） |
+| 当前版本 | 0.2.0-rc07 | 1.1.0（最终版） |
 | 发布状态 | 持续更新（候选版） | 不再提供新版本 |
 | 系统要求 | Android 8.0+ | arm64 Root 设备 |
 | 支持架构 | VPN：arm64 / x86_64；Root：arm64 | arm64 通用 ZIP |
@@ -102,6 +102,12 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 App 构建环境：Linux x86_64、JDK 17、Android SDK 36、NDK `28.2.13676358`、Rust `1.95.0`、clang/libclang、curl、unzip、Python 3。脚本会运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建，上游下载与依赖校验值均已固定。
 
+Root 与 VPN 内核均固定到 EasyTier **2.7.0**（上游标为预发布版）。
+此版本不再接受旧 WireGuard 入口 `client_cidr` / `wg://host:port/CIDR`，
+或仅 token 的 `--config-server` 参数；使用这些高级配置时需先按上游说明迁移。
+TierNest 不会为升级内核而自动重写已有 TOML、网络身份或运行偏好。
+保留的模块源码同步到 `1.1.1-et2.7.0`，仍只构建一个 arm64 通用 ZIP，不恢复设备专用发布。
+
 > 官方发布使用测试签名密钥，密钥不入库。自行构建的 APK 签名不同，覆盖安装前请先导出配置；GitHub Actions 构建产物用于代码验证，不替代维护者发布包。
 
 完整说明见 [android/README.md](android/README.md)、[native/vpn/README.md](native/vpn/README.md) 与 [开发注意事项](开发注意事项.md)。
@@ -132,7 +138,7 @@ App 构建环境：Linux x86_64、JDK 17、Android SDK 36、NDK `28.2.13676358`�
 
 ## 致谢
 
-- [EasyTier](https://github.com/EasyTier/EasyTier) — 组网核心（v2.6.4）。
+- [EasyTier](https://github.com/EasyTier/EasyTier) — 组网核心（v2.7.0）。
 - [Miuix](https://github.com/compose-miuix-ui/miuix) — 澎湃风格 UI 组件。
 - [interstellar-proxy](https://github.com/zn0wii/interstellar-proxy) — 星际控制台主题的视觉参考。
 - [tomlj](https://github.com/tomlj/tomlj) — TOML 解析。

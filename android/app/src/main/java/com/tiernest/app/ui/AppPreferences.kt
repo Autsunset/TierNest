@@ -212,7 +212,7 @@ enum class PreferencePage(val title: String) {
                 PreferencePage.ABOUT -> {
                     item { SettingsCard {
                         Text("TierNest ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge)
-                        SmallNote("EasyTier 2.6.4 · Root / VPN 双模式 · arm64 与 x86_64")
+                        SmallNote("EasyTier 2.7.0 · Root / VPN 双模式 · arm64 与 x86_64")
                         SmallNote("VPN 模式只需系统授权。Root 模式需原生 arm64、Root 权限、TUN 和 iptables。")
                     } }
                     item { SettingsCard {
@@ -222,7 +222,7 @@ enum class PreferencePage(val title: String) {
                     } }
                     item { SettingsCard(padding = 4.dp) {
                         PreferenceRow(Icons.Rounded.Code, "TierNest 源码", "源代码、版本与问题反馈 · LGPL-3.0") { openUrl("https://github.com/Autsunset/TierNest") }
-                        PreferenceRow(Icons.Rounded.Code, "EasyTier", "上游源码 · LGPL-3.0") { openUrl("https://github.com/EasyTier/EasyTier/tree/v2.6.4") }
+                        PreferenceRow(Icons.Rounded.Code, "EasyTier", "上游源码 · LGPL-3.0") { openUrl("https://github.com/EasyTier/EasyTier/tree/v2.7.0") }
                         PreferenceRow(Icons.Rounded.Palette, "视觉参考", "interstellar-proxy · MIT") { openUrl("https://github.com/zn0wii/interstellar-proxy") }
                         PreferenceRow(Icons.Rounded.Palette, "澎湃组件", "Miuix 0.6.1 · Apache-2.0") { openUrl("https://github.com/compose-miuix-ui/miuix") }
                     } }

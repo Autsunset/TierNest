@@ -34,6 +34,7 @@ if '-o' in a and 'addr' in a:
     iface = val('dev')
     done(output=f"31: {iface} inet {s['addrs'][iface]} scope global {iface}")
 if a[:2] == ['rule', 'show']:
+    if os.environ.get('FAIL_RULE_READ'): done(1)
     done(output='\n'.join(s['rules']))
 def rule_text(args):
     parts = [f"{val('pref')}: from all"]
@@ -54,13 +55,17 @@ if a[:2] == ['rule', 'del']:
         if text.startswith(f"{pref}:"): s['rules'].remove(text); done()
     done(2)
 if a[:2] == ['route', 'show']:
+    if os.environ.get('FAIL_ROUTE_READ'): done(1)
     if 'default' in a: done(output='\n'.join(s['default_routes']))
     table = val('table'); routes = s['routes'].get(table, {})
+    if not routes and os.environ.get('MISSING_TABLE'):
+        print('Error: ipv4: FIB table does not exist.\nDump terminated', file=sys.stderr)
+        done(2)
     out = []
     for cidr, spec in routes.items():
         if 'exact' in a and val('exact') != cidr: continue
         if 'proto' in a and str(spec.get('proto')) != val('proto'): continue
-        line = f"{cidr} dev {spec['dev']} proto {spec.get('proto')}"
+        line = f"{cidr.removesuffix('/32')} dev {spec['dev']} proto {spec.get('proto')}"
         if spec.get('src'): line += f" src {spec['src']}"
         out.append(line)
     done(output='\n'.join(out))
@@ -242,6 +247,53 @@ class HotspotTest(unittest.TestCase):
                 self.assertNotIn(call[3], ('-A', '-I', '-N'), call)
         self.assertEqual(len(self.state()['chains']['nat']['TNAPP_HSN']), 2)
 
+    def test_target_collection_uses_one_snapshot_independent_of_peer_count(self):
+        for count in [1, 128]:
+            targets = [f'198.51.100.{i}/32' for i in range(1, count + 1)]
+            (self.root / 'run/routes').write_text('\n'.join(targets) + '\n')
+            state = self.base_state()
+            state['routes']['20110'] = {target: {'dev': 'tiernest0', 'proto': '186'} for target in targets}
+            self.write_state(state)
+            result = self.run_shell(
+                'read_lease; hs_cidr=192.168.77.0/24; hs_collect_targets && cat "$TN_RUN/hotspot.targets"')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), targets)
+            self.assertEqual(self.state()['calls'], [['route', 'show', 'table', '20110']])
+
+    def test_missing_or_foreign_target_is_not_forwarded(self):
+        state = self.base_state()
+        state['routes']['20110']['198.51.100.0/24']['dev'] = 'foreign0'
+        self.write_state(state)
+        self.assert_active(self.enable())
+        self.assertEqual(len(self.state()['chains']['nat']['TNAPP_HSN']), 1)
+        self.assertEqual((self.root / 'run/hotspot.targets').read_text(), '10.77.0.0/24\n')
+
+    def test_unreadable_target_snapshot_is_not_treated_as_no_routes(self):
+        result = self.enable(extra={'FAIL_ROUTE_READ': '1'})
+        self.assertIn('hotspot_state=error', result.stdout)
+        self.assertEqual(self.state()['rules'], [])
+        self.assert_baseline_chains(self.state()['chains'])
+
+    def test_empty_target_snapshot_waits_for_routes(self):
+        state = self.base_state()
+        state['routes']['20110'] = {}
+        self.write_state(state)
+        result = self.enable(extra={'MISSING_TABLE': '1'})
+        self.assertIn('hotspot_state=waiting_routes', result.stdout)
+        self.assertEqual(self.state()['rules'], [])
+        self.assert_baseline_chains(self.state()['chains'])
+
+    def test_malformed_target_or_proxy_cannot_reach_firewall(self):
+        for file in ['run/routes', 'stage/hotspot-proxies']:
+            original = (self.root / file).read_text()
+            for cidr in ['10.0.0.0/0', '127.0.0.0/8', '169.254.0.0/16', '224.0.0.0/8', '10.0.0.999/24', '10.0.0.0/24;id']:
+                (self.root / file).write_text(cidr + '\n')
+                result = self.enable()
+                self.assertIn('hotspot_state=conflict', result.stdout, cidr)
+                self.assertEqual(self.state()['rules'], [])
+                self.assert_baseline_chains(self.state()['chains'])
+            (self.root / file).write_text(original)
+
     def test_off_cleanup_command_count_reduced(self):
         self.assert_active(self.enable())
         before = len(self.state()['calls'])
@@ -332,6 +384,28 @@ class HotspotTest(unittest.TestCase):
         self.assert_baseline_chains(state['chains'])
         for name in ['hotspot.rules', 'hotspot.return', 'hotspot.chains', 'hotspot.applied']:
             self.assertFalse((self.root / 'run' / name).exists(), name)
+
+    def test_return_path_read_failure_keeps_journal_for_retry(self):
+        for flag in ['FAIL_RULE_READ', 'FAIL_ROUTE_READ']:
+            self.assert_active(self.enable())
+            result = self.run_shell('cleanup_hotspot', extra={flag: '1'})
+            self.assertNotEqual(result.returncode, 0, flag)
+            self.assertTrue((self.root / 'run/hotspot.return').exists(), flag)
+            self.assertIn('hotspot_state=error', (self.root / 'run/hotspot.status').read_text())
+            self.assertEqual(self.run_shell('cleanup_hotspot').returncode, 0)
+            self.assertEqual(self.state()['rules'], [])
+            self.assertNotIn('20130', self.state()['routes'])
+            self.assertFalse((self.root / 'run/hotspot.return').exists())
+
+    def test_cleanup_handles_vanished_return_table(self):
+        self.assert_active(self.enable())
+        state = self.state()
+        del state['routes']['20130']
+        self.write_state(state)
+        result = self.run_shell('cleanup_hotspot', extra={'MISSING_TABLE': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.state()['rules'], [])
+        self.assertFalse((self.root / 'run/hotspot.return').exists())
 
     def test_fresh_process_cleans_from_journal(self):
         self.assert_active(self.enable())

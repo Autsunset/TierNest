@@ -11,11 +11,12 @@ name = "tiernest_vpn"
 crate-type = ["cdylib"]
 
 [dependencies]
-easytier = { git = "https://github.com/EasyTier/EasyTier.git", rev = "8428a89d2dabc94c97d370ec607c6ca142473626" }
+easytier = { git = "https://github.com/EasyTier/EasyTier.git", rev = "8b7f1f0196edb5b580829ed5f135050fb5853478" }
+easytier-core = { git = "https://github.com/EasyTier/EasyTier.git", rev = "8b7f1f0196edb5b580829ed5f135050fb5853478", default-features = false }
 jni = "=0.21.1"
 once_cell = "1.18"
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 uuid = "1"
 
 [profile.release]

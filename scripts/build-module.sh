@@ -7,8 +7,6 @@ if (( $# )); then
 fi
 bash "$ROOT/scripts/build-webui.sh"
 bash "$ROOT/scripts/build-netwatch.sh"
-if [[ ! -x "$ROOT/module/bin/easytier-core" || ! -x "$ROOT/module/bin/easytier-cli" ]]; then
-  bash "$ROOT/scripts/fetch-upstream.sh"
-fi
+bash "$ROOT/scripts/fetch-upstream.sh"
 bash "$ROOT/scripts/validate-module.sh"
 "${PYTHON:-python3}" "$ROOT/scripts/package-module.py"

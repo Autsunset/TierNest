@@ -177,8 +177,16 @@ export_logs() {
         echo
         echo "================ complete hotspot.log ================"
         cat "$HOTSPOT_LOG" 2>/dev/null
-    } 2>&1 | redact_sensitive > "$tmp_output"
-    mv "$tmp_output" "$output"
+    } 2>&1 | redact_sensitive > "$tmp_output" || {
+        rm -f "$tmp_output"
+        echo "诊断日志写入失败，请检查存储空间。" >&2
+        return 1
+    }
+    mv "$tmp_output" "$output" || {
+        rm -f "$tmp_output"
+        echo "诊断日志导出失败：$output" >&2
+        return 1
+    }
     chmod 0644 "$output" 2>/dev/null
     echo "$output"
 }

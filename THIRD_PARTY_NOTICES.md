@@ -3,15 +3,15 @@
 ## EasyTier
 
 TierNest redistributes unmodified `easytier-core` and `easytier-cli` binaries
-from the EasyTier v2.6.4 release for Linux aarch64.
+from the EasyTier v2.7.0 release for Linux aarch64.
 
 - Upstream project: EasyTier/EasyTier
-- Upstream version: v2.6.4
+- Upstream version: v2.7.0
 - License: GNU Lesser General Public License v3.0 (LGPL-3.0), as provided
-  by the pinned v2.6.4 source tree. The earlier Apache-2.0 label was incorrect.
-- Corresponding source: https://github.com/EasyTier/EasyTier/tree/v2.6.4
+  by the pinned v2.7.0 source tree. The earlier Apache-2.0 label was incorrect.
+- Corresponding source: https://github.com/EasyTier/EasyTier/tree/v2.7.0
 - Upstream release archive SHA-256:
-  `39a6b4fa21d9fdc83d3b38c90562f610c0986ecc089c4026c3be22a0ab27c5e5`
+  `f2e8a306d21cceadb253c55854b4b96b3b60c623db79bac8471019225746d6b2`
 
 TierNest is an independent community project and is not endorsed by the
 EasyTier maintainers.
@@ -24,7 +24,7 @@ ANTLR runtime dependency under BSD-3-Clause). The build bundles the EasyTier
 license and this notice with the APK. EasyTier executables remain separate,
 unmodified programs. The VPN backend links a source-built EasyTier library via
 the LGPL-3.0-only JNI bridge in `native/vpn/`; it does not link MoonTier binaries.
-The exact EasyTier source commit is `8428a89d2dabc94c97d370ec607c6ca142473626`.
+The exact EasyTier source commit is `8b7f1f0196edb5b580829ed5f135050fb5853478`.
 `native/vpn/Cargo.lock` pins transitive sources and checksums. Instructions to
 build, replace the native library and install a modified APK are in
 `native/vpn/README.md`. Rust package declarations and available license texts are

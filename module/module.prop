@@ -1,7 +1,7 @@
 id=tiernest
 name=TierNest Core
-version=1.1.0-et2.6.4
-versionCode=101000
+version=1.1.1-et2.7.0
+versionCode=101001
 author=TierNest Contributors
 description=[状态] 待启动 | WebUI | 自动恢复
 webuiIcon=webroot/icon.png

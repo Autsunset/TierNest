@@ -3,15 +3,15 @@
 ## EasyTier
 
 TierNest redistributes unmodified `easytier-core` and `easytier-cli` binaries
-from the EasyTier v2.6.4 release for Linux aarch64.
+from the EasyTier v2.7.0 release for Linux aarch64.
 
 - Upstream project: EasyTier/EasyTier
-- Upstream version: v2.6.4
+- Upstream version: v2.7.0
 - License: GNU Lesser General Public License v3.0 (LGPL-3.0), as provided
-  by the pinned v2.6.4 source tree. The earlier Apache-2.0 label was incorrect.
-- Corresponding source: https://github.com/EasyTier/EasyTier/tree/v2.6.4
+  by the pinned v2.7.0 source tree. The earlier Apache-2.0 label was incorrect.
+- Corresponding source: https://github.com/EasyTier/EasyTier/tree/v2.7.0
 - Upstream release archive SHA-256:
-  `39a6b4fa21d9fdc83d3b38c90562f610c0986ecc089c4026c3be22a0ab27c5e5`
+  `f2e8a306d21cceadb253c55854b4b96b3b60c623db79bac8471019225746d6b2`
 
 TierNest is an independent community project and is not endorsed by the
 EasyTier maintainers.
