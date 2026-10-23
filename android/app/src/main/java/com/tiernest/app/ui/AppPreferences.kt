@@ -79,15 +79,15 @@ enum class PreferencePage(val title: String) {
                 }
                 PreferencePage.APPEARANCE -> {
                     item { GroupLabel("界面风格") }
+                    item { ThemePicker(prefs.theme) { theme -> model.preference { it.copy(theme = theme) } } }
                     item { SettingsCard {
-                        ChoiceStrip(listOf("星际", "Material 3", "澎湃"), listOf(ThemeStyle.CONSOLE, ThemeStyle.MATERIAL, ThemeStyle.HYPER).indexOf(prefs.theme),
-                            { index -> model.preference { it.copy(theme = listOf(ThemeStyle.CONSOLE, ThemeStyle.MATERIAL, ThemeStyle.HYPER)[index]) } })
-                        SmallNote("星际风格参考 interstellar-proxy 的玻璃卡片与控制台布局。")
+                        SmallNote("液态玻璃参考 Liquid-Glass-Android 的材质语言，以 Compose 实现，不引入其原生 View 库。")
+                        SmallNote("旧主题完整保留。切换主题不会改变明暗、配色或网络设置。")
                     } }
                     item { GroupLabel("明暗与配色") }
                     item { SettingsCard {
                         ChoiceStrip(listOf("跟随系统", "浅色", "深色"), prefs.colors.ordinal, { index -> model.preference { it.copy(colors = ColorMode.entries[index]) } })
-                        if (prefs.theme == ThemeStyle.CONSOLE) {
+                        if (prefs.theme == ThemeStyle.CONSOLE || prefs.theme == ThemeStyle.LIQUID) {
                             AccentPicker(prefs.accent) { accent -> model.preference { it.copy(accent = accent) } }
                         }
                         if (prefs.theme == ThemeStyle.MATERIAL) PreferenceSwitch("壁纸动态取色", "Android 12 及以上可用", prefs.dynamicColor) { value -> model.preference { it.copy(dynamicColor = value) } }
@@ -96,6 +96,7 @@ enum class PreferencePage(val title: String) {
                     item { SettingsCard {
                         PreferenceSwitch("减少动态效果", "子页改用淡入淡出；同时遵循系统动画设置", prefs.reduceMotion) { value -> model.preference { it.copy(reduceMotion = value) } }
                         SmallNote("左右滑动可切换主页面，点击底部导航直接切换。背景光晕不持续播放动画。")
+                        if (prefs.theme == ThemeStyle.LIQUID) SmallNote("Android 13+ 支持背景透镜，较早版本使用磨砂外观。不使用传感器或全屏截图轮询，不是参考库完整效果的移植。")
                     } }
                 }
                 PreferencePage.SERVICE -> {
@@ -223,7 +224,8 @@ enum class PreferencePage(val title: String) {
                     item { SettingsCard(padding = 4.dp) {
                         PreferenceRow(Icons.Rounded.Code, "TierNest 源码", "源代码、版本与问题反馈 · LGPL-3.0") { openUrl("https://github.com/Autsunset/TierNest") }
                         PreferenceRow(Icons.Rounded.Code, "EasyTier", "上游源码 · LGPL-3.0") { openUrl("https://github.com/EasyTier/EasyTier/tree/v2.7.0") }
-                        PreferenceRow(Icons.Rounded.Palette, "视觉参考", "interstellar-proxy · MIT") { openUrl("https://github.com/zn0wii/interstellar-proxy") }
+                        PreferenceRow(Icons.Rounded.Palette, "液态玻璃参考", "Liquid-Glass-Android · 视觉参考，独立 Compose 实现") { openUrl("https://github.com/QWEA0/Liquid-Glass-Android") }
+                        PreferenceRow(Icons.Rounded.Palette, "星际风格参考", "interstellar-proxy · MIT") { openUrl("https://github.com/zn0wii/interstellar-proxy") }
                         PreferenceRow(Icons.Rounded.Palette, "澎湃组件", "Miuix 0.6.1 · Apache-2.0") { openUrl("https://github.com/compose-miuix-ui/miuix") }
                     } }
                 }
@@ -261,4 +263,9 @@ enum class PreferencePage(val title: String) {
         dismissButton = { TextButton(onClick = { migrationConfirm = false }) { Text("继续检查") } })
 }
 
-fun styleName(style: ThemeStyle): String = when (style) { ThemeStyle.CONSOLE -> "星际"; ThemeStyle.MATERIAL -> "Material 3"; ThemeStyle.HYPER -> "澎湃" }
+fun styleName(style: ThemeStyle): String = when (style) {
+    ThemeStyle.LIQUID -> "液态玻璃"
+    ThemeStyle.CONSOLE -> "星际"
+    ThemeStyle.MATERIAL -> "Material 3"
+    ThemeStyle.HYPER -> "澎湃"
+}

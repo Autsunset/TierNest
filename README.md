@@ -31,11 +31,13 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 | | 独立 App | Root 模块（已停止发布） |
 | --- | --- | --- |
-| 当前版本 | 0.2.0-rc07 | 1.1.0（最终版） |
+| 当前版本 | 0.2.0-rc08（候选版） | 1.1.0（最终版） |
 | 发布状态 | 持续更新（候选版） | 不再提供新版本 |
 | 系统要求 | Android 8.0+ | arm64 Root 设备 |
 | 支持架构 | VPN：arm64 / x86_64；Root：arm64 | arm64 通用 ZIP |
 | 管理入口 | App 界面（含快捷磁贴、前台通知） | KernelSU WebUI |
+
+rc08 的维护者签名 APK、源码归档与校验文件见 [Releases](https://github.com/Autsunset/TierNest/releases)；实体手机 GPU 性能与功耗验收仍待完成。
 
 ## 运行模式
 
@@ -57,7 +59,9 @@ TierNest 是社区项目，与 EasyTier 上游没有官方隶属关系。
 
 ### 外观
 
-- **三种主题**：星际控制台、Material 3、Miuix 澎湃，明暗跟随系统或独立设置。
+- **四种主题**：新增液态玻璃，保留星际控制台、Material 3、Miuix 澎湃，可在「设置 → 外观与动效」随时切换。新安装默认液态玻璃，升级保留原主题。
+- 液态玻璃包含新首页状态卡、共享玻璃卡片与悬浮导航，视觉参考 [Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android)，由 Compose 独立实现。Android 13+ 对静态背景图案应用透镜效果，较早版本使用磨砂外观，不截取或折射页面文字。
+- 明暗跟随系统或独立设置；液态玻璃与星际提供四种强调色。切换主题保留明暗、配色及组网设置，不增加传感器、截图轮询或后台定时任务。
 - 系统字体与自有品牌素材，支持减少动态效果；磁贴、通知与单色主题图标适配 Android 自适应裁切。
 
 ### 可靠性与省电
@@ -141,6 +145,7 @@ TierNest 不会为升级内核而自动重写已有 TOML、网络身份或运行
 - [EasyTier](https://github.com/EasyTier/EasyTier) — 组网核心（v2.7.0）。
 - [Miuix](https://github.com/compose-miuix-ui/miuix) — 澎湃风格 UI 组件。
 - [interstellar-proxy](https://github.com/zn0wii/interstellar-proxy) — 星际控制台主题的视觉参考。
+- [Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android) — 液态玻璃材质的视觉参考；TierNest 使用独立 Compose 实现，不引入其 View 库。
 - [tomlj](https://github.com/tomlj/tomlj) — TOML 解析。
 
 完整的第三方组件、版本与许可声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

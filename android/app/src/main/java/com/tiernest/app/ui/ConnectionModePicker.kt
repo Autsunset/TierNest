@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,23 +21,24 @@ import com.tiernest.app.data.ConnectionMode
     val prefs by model.prefs.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
     var pending by remember { mutableStateOf<ConnectionMode?>(null) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ConnectionMode.entries.forEach { mode ->
-            val selected = prefs.connectionMode == mode
-            Surface(onClick = {
-                if (!busy && !selected) {
-                    if (prefs.requested) pending = mode else model.chooseConnectionMode(mode)
+    fun select(mode: ConnectionMode) {
+        if (!busy && prefs.connectionMode != mode) {
+            if (prefs.requested) pending = mode else model.chooseConnectionMode(mode)
+        }
+    }
+    val liquid = LocalAppearance.current.liquid
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (liquid && (fontScale >= 1.3f || maxWidth < 300.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ConnectionMode.entries.forEach { mode ->
+                    ModeOption(mode, prefs.connectionMode == mode, !busy, { select(mode) }, Modifier.fillMaxWidth())
                 }
-            }, modifier = Modifier.weight(1f), enabled = !busy,
-                shape = RoundedCornerShape(20.dp),
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(if (mode == ConnectionMode.ROOT) Icons.Rounded.Shield else Icons.Rounded.VpnKey, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-                    Column {
-                        Text(mode.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, style = MaterialTheme.typography.titleSmall)
-                        Text(if (mode == ConnectionMode.ROOT) "可与其他 VPN 共存" else "无需 Root 权限", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ConnectionMode.entries.forEach { mode ->
+                    ModeOption(mode, prefs.connectionMode == mode, !busy, { select(mode) }, Modifier.weight(1f))
                 }
             }
         }
@@ -45,4 +47,22 @@ import com.tiernest.app.data.ConnectionMode
         text = { Text("会先断开当前连接，保留配置。切换后由你重新连接。VPN 模式会使用系统 VPN 槽位。") },
         confirmButton = { TextButton(onClick = { model.chooseConnectionMode(mode); pending = null }) { Text("断开并切换") } },
         dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } }) }
+}
+
+@Composable
+private fun ModeOption(mode: ConnectionMode, selected: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Surface(onClick = onClick, modifier = modifier, enabled = enabled,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(if (mode == ConnectionMode.ROOT) Icons.Rounded.Shield else Icons.Rounded.VpnKey, null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            Column {
+                Text(mode.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, style = MaterialTheme.typography.titleSmall)
+                Text(if (mode == ConnectionMode.ROOT) "可与其他 VPN 共存" else "无需 Root 权限",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }

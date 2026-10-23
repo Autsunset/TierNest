@@ -32,6 +32,10 @@ import androidx.compose.ui.unit.dp
     val colors = MaterialTheme.colorScheme
     val items = listOf("概览" to Icons.Rounded.Dashboard, "节点" to Icons.Rounded.Hub,
         "组网" to Icons.Rounded.Lan, "设置" to Icons.Rounded.Tune)
+    if (appearance.liquid) {
+        LiquidPageDock(pager, items, onSelect)
+        return
+    }
     if (appearance.hyper) {
         top.yukonga.miuix.kmp.basic.NavigationBar(
             items = items.map { top.yukonga.miuix.kmp.basic.NavigationItem(it.first, it.second) },

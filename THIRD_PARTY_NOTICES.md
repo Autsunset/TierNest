@@ -38,6 +38,19 @@ they do not bundle Google Sans, MiSans or Xiaomi assets. The HyperOS appearance
 uses Miuix 0.6.1 (Apache-2.0), https://github.com/compose-miuix-ui/miuix;
 its Apache license is bundled at `assets/licenses/miuix-Apache-2.0.txt`.
 
+## Liquid-Glass-Android visual reference
+
+The Android Liquid Glass theme is visually inspired by QWEA0/Liquid-Glass-Android.
+Project: https://github.com/QWEA0/Liquid-Glass-Android
+The upstream README identifies that project as MIT-licensed.
+
+TierNest's theme is an original Jetpack Compose implementation, not an embedded
+or ported copy of the upstream Android View library. No upstream source code,
+shaders, assets or native binaries are redistributed. Its rounded-rectangle lens
+samples TierNest's own static procedural background artwork on Android 13+;
+older Android versions and shader initialization failures use a frosted-gradient
+fallback. Foreground UI and screen contents are not captured or refracted.
+
 ## interstellar-proxy UI reference
 
 The Android console appearance, glass-surface treatment and grouped preference

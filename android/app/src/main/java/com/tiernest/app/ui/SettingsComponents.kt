@@ -41,6 +41,10 @@ object AppMotion {
 @Composable fun AmbientBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val appearance = LocalAppearance.current
+    if (appearance.liquid) {
+        LiquidBackground(modifier, content)
+        return
+    }
     Box(modifier.background(colors.background).then(if (appearance.console) Modifier.drawWithCache {
         val wash = Brush.radialGradient(listOf(colors.primary.copy(alpha = 0.12f), Color.Transparent),
             center = Offset(size.width * 0.95f, size.height * 0.12f), radius = size.width * 0.85f)
@@ -53,6 +57,13 @@ object AppMotion {
 @Composable fun SettingsCard(modifier: Modifier = Modifier, padding: Dp = 16.dp, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
     val appearance = LocalAppearance.current
+    if (appearance.liquid) {
+        LiquidSurface(modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+        }
+        return
+    }
     if (appearance.hyper) {
         top.yukonga.miuix.kmp.basic.Card(modifier = modifier.fillMaxWidth(), insideMargin = PaddingValues(padding)) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content)

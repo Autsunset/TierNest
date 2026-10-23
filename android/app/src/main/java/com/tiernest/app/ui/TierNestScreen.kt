@@ -112,10 +112,13 @@ import kotlinx.coroutines.launch
 
 @Composable private fun Overview(model: AppModel, state: Dashboard, prefs: Preferences, onConnect: () -> Unit, onConfig: () -> Unit) {
     val clock = remember { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()) }
+    val liquid = LocalAppearance.current.liquid
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { SettingsHeader("TierNest", "YOUR PRIVATE NETWORK") }
-        item { ConnectionModePicker(model) }
+        if (!liquid) item { ConnectionModePicker(model) }
         item {
+            if (liquid) LiquidConnectionHero(state, prefs, onConnect)
+            else
             Surface(shape = MaterialTheme.shapes.extraLarge,
                 color = if (state.active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer) {
                 Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -140,6 +143,7 @@ import kotlinx.coroutines.launch
                 }
             }
         }
+        if (liquid) item { ConnectionModePicker(model) }
         if (state.error.isNotBlank()) item {
             Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
                 Text(state.error, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)

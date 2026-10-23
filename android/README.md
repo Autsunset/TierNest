@@ -1,9 +1,10 @@
 # TierNest Android App
 
-**0.2.0-rc07 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.7.0
+**0.2.0-rc08 候选版** · Android 8.0+ · Kotlin / Jetpack Compose · EasyTier 2.7.0
 
 独立组网 App，可在首页选择 **VPN 模式**或 **Root 模式**。不需要先刷入模块。
 新安装默认 VPN；从早期 Root 版升级保留原模式、TOML、主题和运行偏好。
+本次为 UI 候选版更新，维护者签名包见 Releases；候选标记保留到实体设备验收完成。
 
 Root 二进制与 VPN 库统一使用固定提交的 EasyTier 2.7.0，上游将其标为预发布版。
 版本、源码提交与官方包/二进制 SHA-256 记录在 `scripts/easytier-release.conf`；
@@ -28,7 +29,8 @@ Root 模式可选择让 Wi-Fi 热点设备单向访问组网。
 - **节点**：列表与路由拓扑切换，点按查看下一跳、RTT、节点 ID、版本和共享网段。
   根据实际路由画图，未知/折叠路径用虚线表示；它不是整个 Mesh 的物理连接地图。
 - **组网**：基本、节点、参数、TOML 分组编辑；保留未知字段、校验、导入、备份、保存并应用。
-- **外观**：星际控制台、Material 3、Miuix 澎湃；系统/浅色/深色可独立设置。
+- **外观**：液态玻璃、星际控制台、Material 3、Miuix 澎湃；系统/浅色/深色可独立设置。
+  新增液态玻璃首页状态卡、共享卡片与悬浮底栏；新安装默认使用，升级保留旧选择。
   控制台底栏参考 interstellar-proxy 的弹簧位移与颜色过渡，支持快速改选。
   系统字体、自有品牌，没有厂商字体或品牌素材；支持减少动态效果。
 - **图标**：Image API `gpt-image-2.5` 生成的编织连接标记，适配 Android 自适应裁切。
@@ -68,6 +70,26 @@ VPN 模式首次弹出 Android 授权；Root 模式由 Root 管理器授权 **Ap
 Android 8/9 在创建 Download 备份或保存需要备份的修改时，会按需请求文件访问
 权限；允许后继续原操作，拒绝时保留原配置与草稿。模块导入会先写入审阅保护与
 停止状态，再提交 TOML；提交失败主动回滚，无法确认恢复时继续阻止未审阅的配置运行。
+
+## 外观与旧版切换
+
+进入「设置 → 外观与动效 → 界面风格」，点按预览即可切换液态玻璃、星际、
+Material 3 或澎湃。旧主题没有删除；已有主题按原名称保存和恢复，旧安装缺少或
+无法识别主题偏好时仍使用星际，只有全新安装默认液态玻璃。
+
+明暗模式独立保存。液态玻璃与星际共用薄荷、晴空、香芋、暖杏四种强调色，
+Material 3 保留 Android 12+ 壁纸动态取色；切换主题不会重置这些选择，也不会
+重写 TOML、改变连接模式或重启组网连接。「减少动态效果」同时遵循系统动画开关。
+
+液态玻璃以 [Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android)
+的材质语言为视觉参考，由 Compose 独立绘制，并非对上游 View 库的嵌入或完整移植：
+
+- Android 13+（API 33+）使用 AGSL 圆角透镜和固定高光，仅重采样程序绘制的静态背景图案；
+  不抓取全屏、页面文字、配置或其他前景内容。
+- Android 8.0–12L（API 26–32），以及着色器初始化失败时，使用磨砂渐变外观，
+  不降低最低系统版本，也不影响页面功能。
+- 不新增原生库依赖、传感器、装饰动画循环、截图轮询或后台定时任务。滚动和操作时
+  仍需正常绘制；这不等于零 GPU 开销，也不是已完成真机功耗测试的结论。
 
 ## 后台中断与重连
 
@@ -188,8 +210,8 @@ sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
 ```
 
 脚本运行 Root 回归、JVM 测试、Lint、双架构 VPN 源码编译和 R8 优化构建。
-CI 模式输出 `dist/TierNest-CI-v0.2.0-rc07-ci.apk`；维护者发布模式输出
-`dist/TierNest-App-v0.2.0-rc07.apk`。上游下载、Cargo 依赖、工具版本和
+CI 模式输出 `dist/TierNest-CI-v0.2.0-rc08-ci.apk`；维护者发布模式输出
+`dist/TierNest-App-v0.2.0-rc08.apk`。上游下载、Cargo 依赖、工具版本和
 Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](../native/vpn/README.md)。
 
 候选包采用 Release 优化且不可调试。维护者包保留已发布 APK 的签名身份，私钥现由
@@ -204,9 +226,17 @@ Gradle 分发包校验值已固定。VPN 编译与修改说明见 [native/vpn](.
 
 ## 验证范围
 
+rc08 已完成 127 项 JVM 测试、Release Lint 零错误、签名与 APK 隐私/产物检查。
+API 35 模拟器验证 CI 包覆盖升级、旧主题保留、主题切换/恢复、深色和大字体；
+最终签名包在 API 26 验证磨砂降级、首次配置保存后的主题/VPN 保留和大字体操作。
+这些是离线与模拟器验证，不代表实体手机 GPU 性能或功耗验收。
+
 正式版收敛计划与剩余验收见 [App 发布计划](../docs/APP_RELEASE_PLAN.md)。当前为候选版；
 不能用模拟器、短时连接或离线回归代替实体手机的 Root/热点/待机验收。
 
+rc08 的主题变更还需在不同 Android 版本上确认透镜/磨砂降级、四主题切换与重开恢复、
+浅深色和大字体布局、减少动态效果，以及实际滚动帧时间与功耗。CI 构建或主题偏好
+单元测试不能替代这些视觉和设备验收。
 
 参见 [方案与验证记录](PLAN.zh-CN.md) 及 [故障记录](../TierNest-故障与踩坑记录.md)。
 云手机可验证界面与 VPN 功能，不能替代 arm64 Root 授权、Clash 共存、真实移动网络、
@@ -228,7 +258,9 @@ bash tests/test-app-routes-device.sh <adb-serial>
 
 ## 来源与许可
 
-TierNest 是独立社区项目，采用 LGPL-3.0。内核来自固定版本 EasyTier，界面参考
+TierNest 是独立社区项目，采用 LGPL-3.0。内核来自固定版本 EasyTier，液态玻璃视觉参考
+[Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android)，星际界面参考
 [interstellar-proxy](https://github.com/zn0wii/interstellar-proxy)，澎湃组件来自
 [Miuix](https://github.com/compose-miuix-ui/miuix)。许可证与来源见
-[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。MoonTier 仅作为功能参考，未复制其代码或二进制。
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。液态玻璃未复制参考库源码、着色器、
+素材或原生二进制。MoonTier 仅作为功能参考，未复制其代码或二进制。
